@@ -1,6 +1,6 @@
 <Solution>
-  <Project Path="../WDC_STACKER.API/WDC_STACKER.API.csproj" Id="01c812d6-560f-4c4d-b7e0-60a93e1a7639" />
-  <Project Path="wdc_stacker.esproj">
+  <Project Path="WDC_STACKER.API/WDC_STACKER.API.csproj" Id="01c812d6-560f-4c4d-b7e0-60a93e1a7639" />
+  <Project Path="WDC_STACKER.CLIENT/wdc_stacker.esproj">
     <Build />
     <Deploy />
   </Project>

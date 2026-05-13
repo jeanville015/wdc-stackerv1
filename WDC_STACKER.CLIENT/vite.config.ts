@@ -16,3 +16,20 @@ export default defineConfig({
         }
     }
 })
+
+//export default defineConfig({
+//    plugins: [react()],
+//    server: {
+//        port: 5173,
+//        open: '/config',
+//        proxy: {
+//            '/api': {
+//                target: 'http://localhost:5002',  // ← your API port
+//                changeOrigin: true,
+//                secure: false,
+//                rewrite: (path) => path  // ← explicitly keep the path as-is
+//            }
+//        }
+//    }
+//})
+
