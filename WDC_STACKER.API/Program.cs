@@ -1,3 +1,4 @@
+using WDC_STACKER.API.Aggregate;
 using WDC_STACKER.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -5,6 +6,14 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 
 builder.Services.AddSingleton<CapacityConfigService>();
+builder.Services.AddScoped<SoapApiService>();
+
+// Auth services — order matters: AD service first, then the aggregation layer
+builder.Services.AddScoped<ActiveDirectoryService>();
+
+// Aggregate layer (sits between service and controller)
+builder.Services.AddScoped<AuthProjectionAggregate>();
+
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

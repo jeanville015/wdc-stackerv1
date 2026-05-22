@@ -1,5 +1,5 @@
 {
-  "RACK_COUNT": 10,
+  "RACK_COUNT": 3,
   "LAYER_COUNT": 4,
   "BOX_COUNT": 10,
   "TARGET_QTY": 7200,
