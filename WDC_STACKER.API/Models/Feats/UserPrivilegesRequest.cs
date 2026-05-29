@@ -4,6 +4,8 @@
     public class UserPrivilegesRequest
     {
         public string EmployeeName { get; set; } = string.Empty;
+        public string FeatsUsername { get; set; } = string.Empty;
+        public string FeatsPassword { get; set; } = string.Empty;
     }
 
     // ── Outbound (your Web API → React TS client) ─────────────────────────────
@@ -27,5 +29,15 @@
         // public List<string> Roles      { get; set; } = new();
         // public bool         CanApprove { get; set; }
         // public bool         CanAudit   { get; set; }
+
+        public XmlTableResult? ParsedPrivileges { get; set; }
     }
+
+    public class XmlTableResult
+    {
+        public string RootName { get; set; } = string.Empty;
+        public List<string> Columns { get; set; } = new();
+        public List<Dictionary<string, string>> Rows { get; set; } = new();
+    }
+
 }

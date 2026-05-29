@@ -1,12 +1,15 @@
 using WDC_STACKER.API.Aggregate;
 using WDC_STACKER.API.Services;
+using WDC_STACKER.API.Swagger;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
 builder.Services.AddSingleton<CapacityConfigService>();
-builder.Services.AddScoped<SoapApiService>();
+//builder.Services.AddScoped<SoapApiService>();
+builder.Services.AddScoped<FeatsService>();
+builder.Services.AddScoped<UserPrivilegesService>();
 
 // Auth services — order matters: AD service first, then the aggregation layer
 builder.Services.AddScoped<ActiveDirectoryService>();
@@ -23,7 +26,13 @@ builder.Services.AddControllers()
     });
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// builder.Services.AddOpenApi();
+// Replace AddOpenApi() with these two:
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.OperationFilter<AddRequiredHeaderParameter>();
+});
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -44,7 +53,10 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    //app.MapOpenApi();
+    // Replace MapOpenApi() with these two:
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseCors("ReactApp");          // ← 1st

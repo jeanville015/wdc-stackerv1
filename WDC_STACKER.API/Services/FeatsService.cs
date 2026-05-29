@@ -1,99 +1,173 @@
-﻿using WDC_STACKER.API.Models;
+﻿using System.ServiceModel;
+using FeatsServiceReference;
+using WDC_STACKER.API.Models.Feats;
 
 namespace WDC_STACKER.API.Services
 {
-    /// <summary>
-    /// Wraps all outbound SOAP calls.
-    /// Replace the placeholder implementations with real HttpClient / SOAP proxy calls.
-    /// </summary>
-    public class SoapApiService
+    public class FeatsService
     {
         private readonly IConfiguration _config;
-        private readonly ILogger<SoapApiService> _logger;
-        // private readonly HttpClient _http;   // inject when real SOAP calls are wired in
+        private readonly ILogger<FeatsService> _logger;
 
-        // Read the SOAP endpoint URL from appsettings.json  →  "SoapApi:BaseUrl"
-        private readonly string _baseUrl;
-
-        public SoapApiService(IConfiguration config, ILogger<SoapApiService> logger)
+        public FeatsService(IConfiguration config, ILogger<FeatsService> logger)
         {
             _config = config;
             _logger = logger;
-            _baseUrl = _config["SoapApi:BaseUrl"] ?? "http://localhost/soap";
         }
 
-        // ── LOGIN ─────────────────────────────────────────────────────────────
-        public async Task<SoapLoginResponse> LoginAsync(SoapLoginRequest request)
+        private TxnServiceSoapClient CreateClient(string username, string password)
         {
-            _logger.LogInformation("SOAP LOGIN → {BaseUrl}", _baseUrl);
+            var binding = new BasicHttpBinding();
+            binding.Security.Mode = BasicHttpSecurityMode.TransportCredentialOnly;
+            binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
 
-            // TODO: build SOAP envelope, call _http.PostAsync, parse response
-            // Placeholder — replace with real implementation:
-            await Task.Delay(0);
+            var url = _config["SoapApi:FeatsBaseUrl"]
+                      ?? "http://hchasspda1o.legacy.shared:8181";
 
-            if (request.Username == "admin" && request.Password == "password")
+            var endpoint = new EndpointAddress($"{url.TrimEnd('/')}/FEATS/TxnService.asmx");
+
+            var client = new TxnServiceSoapClient(binding, endpoint);
+            client.ClientCredentials.UserName.UserName = username;
+            client.ClientCredentials.UserName.Password = password;
+
+            return client;
+        }
+
+        public async Task<UserPrivilegesResponse> GetUserPrivilegesAsync(string employeeName, string username, string password)
+        {
+            _logger.LogInformation(
+                "FEATS GetUserPrivileges → employee={Employee}", employeeName);
+
+            try
             {
-                return new SoapLoginResponse
+                using var client = CreateClient(username, password);
+                var result = await client.GetUserPrivilegesAsync(employeeName);
+
+                return new UserPrivilegesResponse
                 {
                     Success = true,
-                    Token = Guid.NewGuid().ToString(),
-                    Message = "Login successful"
+                    Message = "OK",
+                    EmployeeName = employeeName,
+                    RawPrivilegesXml = result?.OuterXml ?? string.Empty,
+                    ParsedPrivileges = result is null ? null : ParseXmlTable(result)
                 };
             }
-
-            return new SoapLoginResponse
+            catch (Exception ex)
             {
-                Success = false,
-                Token = string.Empty,
-                Message = "Invalid credentials"
+                _logger.LogError(ex,
+                    "FEATS call failed for employee={Employee}", employeeName);
+                return new UserPrivilegesResponse
+                {
+                    Success = false,
+                    Message = "FEATS service error: " + ex.Message
+                };
+            }
+        }
+
+        private static XmlTableResult ParseXmlTable(System.Xml.XmlNode root)
+        {
+            var rows = new List<Dictionary<string, string>>();
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (System.Xml.XmlElement rowElement in root.ChildNodes.OfType<System.Xml.XmlElement>())
+            {
+                var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (System.Xml.XmlElement field in rowElement.ChildNodes.OfType<System.Xml.XmlElement>())
+                {
+                    row[field.Name] = field.InnerText;
+                    columns.Add(field.Name);
+                }
+
+                if (row.Count > 0)
+                    rows.Add(row);
+            }
+
+            return new XmlTableResult
+            {
+                RootName = root.Name,
+                Columns = columns.ToList(),
+                Rows = rows
             };
         }
 
-        // ── VERIFICATION ──────────────────────────────────────────────────────
-        public async Task<SoapVerificationResponse> VerifyAsync(SoapVerificationRequest request)
+        public async Task<FeatsQueryResponse> QueryAsync(FeatsQueryRequest request, string username,string password)
         {
-            _logger.LogInformation("SOAP VERIFY token={Token}", request.Token);
+            _logger.LogInformation(
+                "FEATS Query -> queryType={QueryType}, recordLimit={RecordLimit}",
+                request.QueryType,
+                request.RecordLimit);
 
-            // TODO: validate token against SOAP service or local store
-            await Task.Delay(0);
-
-            bool isValid = !string.IsNullOrWhiteSpace(request.Token);
-
-            return new SoapVerificationResponse
+            try
             {
-                IsValid = isValid,
-                Message = isValid ? "Token is valid" : "Token is invalid or expired"
-            };
+                using var client = CreateClient(username, password);
+
+                var response = await client.QueryAsync(new FeatsServiceReference.QueryRequest
+                {
+                    QueryType = request.QueryType,
+                    FieldNames = request.FieldNames.ToArray(),
+                    Filters = request.Filters
+                        .Select(filter => new FeatsServiceReference.query_filter
+                        {
+                            FilterName = filter.FilterName,
+                            FilterValue = filter.FilterValue
+                        })
+                        .ToArray(),
+                    RecordLimit = request.RecordLimit
+                });
+
+                return new FeatsQueryResponse
+                {
+                    Success = true,
+                    Message = "OK",
+                    QueryType = request.QueryType,
+                    HasMoreRows = response.HasMoreRows,
+                    RawXml = response.QueryResult?.OuterXml ?? string.Empty,
+                    ParsedResult = response.QueryResult is null
+                        ? new FeatsQueryTableResult()
+                        : ParseQueryResult(response.QueryResult)
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS Query failed for queryType={QueryType}", request.QueryType);
+
+                return new FeatsQueryResponse
+                {
+                    Success = false,
+                    Message = "FEATS query error: " + ex.Message,
+                    QueryType = request.QueryType
+                };
+            }
         }
 
-        // ── GET ───────────────────────────────────────────────────────────────
-        public async Task<SoapGetResponse> GetAsync(SoapGetRequest request)
+        private static FeatsQueryTableResult ParseQueryResult(System.Xml.XmlNode root)
         {
-            _logger.LogInformation("SOAP GET resource={ResourceId}", request.ResourceId);
+            var rows = new List<Dictionary<string, string>>();
+            var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // TODO: build SOAP GetRequest envelope, call remote endpoint, deserialise
-            await Task.Delay(0);
-
-            return new SoapGetResponse
+            foreach (System.Xml.XmlElement rowElement in root.ChildNodes.OfType<System.Xml.XmlElement>())
             {
-                Success = true,
-                Message = "GET placeholder",
-                Data = new { ResourceId = request.ResourceId, Value = "example-value" }
-            };
-        }
+                if (rowElement.Name.Contains("schema", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-        // ── SET ───────────────────────────────────────────────────────────────
-        public async Task<SoapSetResponse> SetAsync(SoapSetRequest request)
-        {
-            _logger.LogInformation("SOAP SET resource={ResourceId}", request.ResourceId);
+                var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            // TODO: build SOAP SetRequest envelope, call remote endpoint, check ACK
-            await Task.Delay(0);
+                foreach (System.Xml.XmlElement field in rowElement.ChildNodes.OfType<System.Xml.XmlElement>())
+                {
+                    row[field.Name] = field.InnerText;
+                    columns.Add(field.Name);
+                }
 
-            return new SoapSetResponse
+                if (row.Count > 0)
+                    rows.Add(row);
+            }
+
+            return new FeatsQueryTableResult
             {
-                Success = true,
-                Message = "SET placeholder — resource updated"
+                RootName = root.Name,
+                Columns = columns.ToList(),
+                Rows = rows
             };
         }
 
