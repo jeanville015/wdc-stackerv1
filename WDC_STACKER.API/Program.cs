@@ -1,3 +1,6 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using WDC_STACKER.API.Aggregate;
 using WDC_STACKER.API.Services;
 using WDC_STACKER.API.Swagger;
@@ -6,10 +9,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddSingleton<CapacityConfigService>();
-//builder.Services.AddScoped<SoapApiService>();
-builder.Services.AddScoped<FeatsService>();
-builder.Services.AddScoped<UserPrivilegesService>();
+
+
+
 
 // Auth services — order matters: AD service first, then the aggregation layer
 builder.Services.AddScoped<ActiveDirectoryService>();
@@ -17,6 +19,12 @@ builder.Services.AddScoped<ActiveDirectoryService>();
 // Aggregate layer (sits between service and controller)
 builder.Services.AddScoped<AuthProjectionAggregate>();
 
+builder.Services.AddScoped<FeatsService>();
+builder.Services.AddScoped<UserPrivilegesService>();
+builder.Services.AddScoped<StackerAggregate>();
+builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddSingleton<CapacityConfigService>();
+builder.Services.AddSingleton<FeatsCredentialStore>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -34,6 +42,10 @@ builder.Services.AddSwaggerGen(options =>
     options.OperationFilter<AddRequiredHeaderParameter>();
 });
 
+
+
+
+
 // Add CORS
 builder.Services.AddCors(options =>
 {
@@ -48,6 +60,25 @@ builder.Services.AddCors(options =>
     });
 });
 
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SigningKey"]!))
+        };
+    });
+builder.Services.AddAuthorization();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -59,12 +90,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors("ReactApp");          // ← 1st
+app.UseCors("ReactApp");          // 1st
 
-app.UseHttpsRedirection();        // ← 2nd
+app.UseHttpsRedirection();        // 2nd
 
-app.UseAuthorization();           // ← 3rd
+app.UseAuthentication();          // 3rd
 
-app.MapControllers();             // ← 4th
+app.UseAuthorization();           // 4th
+
+app.MapControllers();             // 5th
 
 app.Run();

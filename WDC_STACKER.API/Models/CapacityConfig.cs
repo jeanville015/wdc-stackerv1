@@ -7,5 +7,6 @@
         public int BOX_COUNT { get; set; }
         public int TARGET_QTY { get; set; }
         public int TARGET_TRAY_COUNT { get; set; }
+        public string ValidOperation { get; set; } = string.Empty;
     }
 }

@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using WDC_STACKER.API.Aggregate;
 
 namespace WDC_STACKER.API.Controllers.Stacker
 {
@@ -7,55 +8,67 @@ namespace WDC_STACKER.API.Controllers.Stacker
     public class StackerController : ControllerBase
     {
         private readonly ILogger<StackerController> _logger;
+        private readonly StackerAggregate _aggregate;
 
-        public StackerController(ILogger<StackerController> logger)
+        public StackerController(
+            ILogger<StackerController> logger,
+            StackerAggregate aggregate)
         {
             _logger = logger;
+            _aggregate = aggregate;
         }
 
-        /// <summary>
-        /// Receives a scanned ID from the scan-holder textbox.
-        /// POST /api/stacker/scan
-        /// Body: { "scannedId": "..." }
-        /// </summary>
         [HttpPost("scan")]
-        public IActionResult Scan([FromBody] ScanRequest request)
+        public async Task<IActionResult> Scan([FromBody] ScanHolderRequest request)
         {
-            if (string.IsNullOrWhiteSpace(request.ScannedId))
-                return BadRequest(new { message = "ScannedId is required." });
+            if (request is null || string.IsNullOrWhiteSpace(request.Holder))
+                return BadRequest(new { message = "Holder is required." });
 
-            _logger.LogInformation("Scan triggered with ID={ScannedId}", request.ScannedId);
+            var token = GetBearerToken(Request);
 
-            // TODO: wire to Aggregate / Service layer when logic is defined
-            return Ok(new
+            if (string.IsNullOrWhiteSpace(token))
+                return Unauthorized(new { message = "Bearer token is required." });
+
+            _logger.LogInformation(
+                "ScanHolderJob triggered for Holder={Holder}",
+                request.Holder);
+
+            var result = await _aggregate.ScanHolderJobAsync(request.Holder, token);
+
+            if (!result.Success &&
+                result.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
             {
-                success = true,
-                scannedId = request.ScannedId,
-                message = $"Scanned ID '{request.ScannedId}' received."
-            });
+                return Unauthorized(new { result.Message });
+            }
+
+            return Ok(result);
         }
 
-        /// <summary>
-        /// Triggers the assign procedure. No parameter required.
-        /// POST /api/stacker/assign
-        /// </summary>
         [HttpPost("assign")]
         public IActionResult Assign()
         {
             _logger.LogInformation("Assign triggered.");
 
-            // TODO: wire to Aggregate / Service layer when logic is defined
             return Ok(new
             {
                 success = true,
                 message = "Assign procedure triggered successfully."
             });
         }
+
+        private static string GetBearerToken(HttpRequest request)
+        {
+            var authorization = request.Headers["Authorization"].ToString();
+
+            if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                return authorization["Bearer ".Length..].Trim();
+
+            return string.Empty;
+        }
     }
 
-    // ── Inline request model (move to Models/Stacker/ when logic is added) ───
-    public class ScanRequest
+    public class ScanHolderRequest
     {
-        public string ScannedId { get; set; } = string.Empty;
+        public string Holder { get; set; } = string.Empty;
     }
 }

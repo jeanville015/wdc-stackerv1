@@ -1,5 +1,6 @@
-import { useState, KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type CSSProperties } from "react";
 import { scanApi, assignApi } from "../api/stackerApi";
+import { useAuth } from "../context/AuthContext";
 
 interface FeedbackState {
     message: string;
@@ -7,11 +8,15 @@ interface FeedbackState {
 }
 
 export default function LeftNav() {
+    const { user } = useAuth();
+
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
     const [assignLoading, setAssignLoading] = useState(false);
+    const [assignEnabled, setAssignEnabled] = useState(false);
     const [feedback, setFeedback] = useState<FeedbackState>({
-        message: "", type: "idle",
+        message: "",
+        type: "idle",
     });
 
     const showFeedback = (message: string, type: "success" | "error") => {
@@ -19,18 +24,33 @@ export default function LeftNav() {
         setTimeout(() => setFeedback({ message: "", type: "idle" }), 3500);
     };
 
-    // ── Scan handler ────────────────────────────────────────────────────────────
     const handleScan = async () => {
-        if (!scanValue.trim()) return;
+        const holder = scanValue.trim();
+
+        if (!holder) return;
+
+        if (!user?.token) {
+            setAssignEnabled(false);
+            showFeedback("Login token is missing. Please sign in again.", "error");
+            return;
+        }
+
         setScanLoading(true);
+        setAssignEnabled(false);
+
         try {
-            const result = await scanApi(scanValue.trim());
-            showFeedback(
-                result.success ? result.message : result.message,
-                result.success ? "success" : "error"
-            );
-            if (result.success) setScanValue("");
+            const result = await scanApi(holder, user.token);
+
+            if (result.Success && result.CanAssign) {
+                window.alert("Validation Pass!");
+                setAssignEnabled(true);
+                showFeedback(result.Message, "success");
+            } else {
+                setAssignEnabled(false);
+                showFeedback(result.Message || "Validation failed.", "error");
+            }
         } catch (err) {
+            setAssignEnabled(false);
             showFeedback(
                 err instanceof Error ? err.message : "Scan error.",
                 "error"
@@ -40,12 +60,10 @@ export default function LeftNav() {
         }
     };
 
-    // Allow pressing Enter in the textbox to trigger scan
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Enter") handleScan();
     };
 
-    // ── Assign handler ──────────────────────────────────────────────────────────
     const handleAssign = async () => {
         setAssignLoading(true);
         try {
@@ -64,17 +82,18 @@ export default function LeftNav() {
         }
     };
 
-    // ── Feedback colours ────────────────────────────────────────────────────────
-    const feedbackStyle: React.CSSProperties =
+    const feedbackStyle: CSSProperties =
         feedback.type === "success"
             ? {
-                background: "rgba(0,82,204,0.07)", borderLeft: "3px solid #0052cc",
-                color: "#0052cc"
+                background: "rgba(0,82,204,0.07)",
+                borderLeft: "3px solid #0052cc",
+                color: "#0052cc",
             }
             : feedback.type === "error"
                 ? {
-                    background: "rgba(210,50,50,0.07)", borderLeft: "3px solid #d23232",
-                    color: "#d23232"
+                    background: "rgba(210,50,50,0.07)",
+                    borderLeft: "3px solid #d23232",
+                    color: "#d23232",
                 }
                 : {};
 
@@ -91,15 +110,11 @@ export default function LeftNav() {
                 gap: "1.5rem",
             }}
         >
-            {/* ── Section label ── */}
             <p
                 className="text-uppercase fw-semibold mb-0"
                 style={{ fontSize: "0.62rem", letterSpacing: "0.25em", color: "#00c5ff" }}
-            >
-                {/*Left Nav LABEL*/}
-            </p>
+            />
 
-            {/* ── Scan holder group ── */}
             <div
                 style={{
                     background: "#f4f5f7",
@@ -115,20 +130,23 @@ export default function LeftNav() {
                     htmlFor="scan-input"
                     className="fw-semibold mb-0"
                     style={{
-                        fontSize: "0.72rem", letterSpacing: "0.08em",
-                        textTransform: "uppercase", color: "#172b4d"
+                        fontSize: "0.72rem",
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: "#172b4d",
                     }}
-                >
-                    {/*group label*/}
-                </label>
+                />
 
                 <input
                     id="scan-input"
                     type="text"
                     className="form-control"
-                    placeholder="Scan Holder Number…"
+                    placeholder="Scan Holder Number..."
                     value={scanValue}
-                    onChange={(e) => setScanValue(e.target.value)}
+                    onChange={(e) => {
+                        setScanValue(e.target.value);
+                        setAssignEnabled(false);
+                    }}
                     onKeyDown={handleKeyDown}
                     disabled={scanLoading}
                     style={{
@@ -169,7 +187,7 @@ export default function LeftNav() {
                                 role="status"
                                 aria-hidden="true"
                             />
-                            validating…
+                            validating...
                         </>
                     ) : (
                         "Validate"
@@ -177,23 +195,25 @@ export default function LeftNav() {
                 </button>
             </div>
 
-            {/* ── Assign button ── */}
             <div>
                 <p
                     className="fw-semibold mb-2"
                     style={{
-                        fontSize: "0.72rem", letterSpacing: "0.08em",
-                        textTransform: "uppercase", color: "#172b4d"
+                        fontSize: "0.72rem",
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: "#172b4d",
                     }}
                 >
                     Assignment
                 </p>
+
                 <button
                     className="btn w-100 fw-bold"
                     onClick={handleAssign}
-                    disabled={assignLoading}
+                    disabled={assignLoading || !assignEnabled}
                     style={{
-                        background: assignLoading
+                        background: assignLoading || !assignEnabled
                             ? "#a0b4d6"
                             : "linear-gradient(90deg, #003d99 0%, #0052cc 100%)",
                         color: "#ffffff",
@@ -203,7 +223,7 @@ export default function LeftNav() {
                         fontSize: "0.78rem",
                         letterSpacing: "0.1em",
                         textTransform: "uppercase",
-                        boxShadow: assignLoading
+                        boxShadow: assignLoading || !assignEnabled
                             ? "none"
                             : "0 3px 10px rgba(0,61,153,0.25)",
                         transition: "all 0.15s",
@@ -216,7 +236,7 @@ export default function LeftNav() {
                                 role="status"
                                 aria-hidden="true"
                             />
-                            Assigning…
+                            Assigning...
                         </>
                     ) : (
                         "Assign"
@@ -224,7 +244,6 @@ export default function LeftNav() {
                 </button>
             </div>
 
-            {/* ── Feedback toast ── */}
             {feedback.type !== "idle" && (
                 <div
                     className="px-3 py-2"

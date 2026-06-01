@@ -23,12 +23,13 @@ namespace WDC_STACKER.API.Aggregate
     {
         private readonly ActiveDirectoryService _adService;
         private readonly ILogger<AuthProjectionAggregate> _logger;
+        private readonly FeatsCredentialStore _featsCredentialStore;
 
-        public AuthProjectionAggregate(ActiveDirectoryService adService,
-                                       ILogger<AuthProjectionAggregate> logger)
+        public AuthProjectionAggregate(ActiveDirectoryService adService, ILogger<AuthProjectionAggregate> logger, FeatsCredentialStore featsCredentialStore)
         {
             _adService = adService;
             _logger = logger;
+            _featsCredentialStore = featsCredentialStore;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request)
@@ -55,9 +56,8 @@ namespace WDC_STACKER.API.Aggregate
             // 2. Generate a session token
             //    TODO: replace with a signed JWT once real AD is wired in.
             var token = GenerateSessionToken();
-
-            _logger.LogInformation(
-                "Login successful for user={Username}", adResult.Username);
+            _featsCredentialStore.Store(token, request.Username, request.Password);
+            _logger.LogInformation("Login successful for user={Username}", adResult.Username);
 
             // 3. Return the ViewModel the controller forwards to React
             return new LoginResponse
