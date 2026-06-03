@@ -25,6 +25,7 @@ builder.Services.AddScoped<StackerAggregate>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddSingleton<CapacityConfigService>();
 builder.Services.AddSingleton<FeatsCredentialStore>();
+builder.Services.AddScoped<StackerSqlService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

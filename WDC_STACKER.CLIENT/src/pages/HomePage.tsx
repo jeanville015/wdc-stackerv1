@@ -1,10 +1,70 @@
-import { useAuth } from "../context/AuthContext";
+import { type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import LeftNav from "../components/LeftNav";
+import RackBoard from "../components/home/RackBoard";
+import { useAuth } from "../context/AuthContext";
+import { useCapacityConfig } from "../hooks/useCapacityConfig";
+
+const shellStyle: CSSProperties = {
+    minHeight: "100vh",
+    background: "#f4f5f7",
+    display: "flex",
+    flexDirection: "column",
+};
+
+const mainStyle: CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+    padding: "1.75rem 2rem",
+    overflowY: "auto",
+    overflowX: "hidden",
+    background: "#f4f5f7",
+};
+
+const pageHeaderStyle: CSSProperties = {
+    marginBottom: "1.1rem",
+};
+
+const pageTitleStyle: CSSProperties = {
+    margin: 0,
+    color: "#172b4d",
+    fontSize: "1.35rem",
+    fontWeight: 700,
+    letterSpacing: "-0.02em",
+};
+
+const pageSubtitleStyle: CSSProperties = {
+    marginTop: "0.35rem",
+    marginBottom: 0,
+    color: "#5e6c84",
+    fontSize: "0.84rem",
+    letterSpacing: "0.03em",
+};
+
+const panelStyle: CSSProperties = {
+    background: "#ffffff",
+    border: "1px solid #dde1e9",
+    borderRadius: "12px",
+    boxShadow: "0 4px 18px rgba(23,43,77,0.08)",
+    padding: "1rem 1.1rem",
+    color: "#172b4d",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
+    fontSize: "0.88rem",
+};
+
+const errorPanelStyle: CSSProperties = {
+    ...panelStyle,
+    borderLeft: "3px solid #d23232",
+    color: "#d23232",
+};
+
 
 export default function HomePage() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const { config, loading, error } = useCapacityConfig();
 
     const handleLogout = () => {
         logout();
@@ -92,7 +152,82 @@ export default function HomePage() {
                         background: "#f4f5f7",
                     }}
                 >
-                    {/* Blank — content will be added here */}
+                    <div style={{ marginBottom: "1.1rem" }}>
+                        <h2
+                            style={{
+                                margin: 0,
+                                color: "#172b4d",
+                                fontSize: "1.35rem",
+                                fontWeight: 700,
+                                letterSpacing: "-0.02em",
+                            }}
+                        >
+                            {/* In-page title here */} 
+                        </h2>
+                        <p
+                            style={{
+                                marginTop: "0.35rem",
+                                marginBottom: 0,
+                                color: "#5e6c84",
+                                fontSize: "0.84rem",
+                                letterSpacing: "0.03em",
+                            }}
+                        >
+                            {/* In-page title details*/} 
+                        </p>
+                    </div>
+
+                    {loading && (
+                        <div
+                            style={{
+                                background: "#ffffff",
+                                border: "1px solid #dde1e9",
+                                borderRadius: "12px",
+                                boxShadow: "0 4px 18px rgba(23,43,77,0.08)",
+                                padding: "1rem 1.1rem",
+                                color: "#172b4d",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.75rem",
+                                fontSize: "0.88rem",
+                            }}
+                        >
+                            <span
+                                className="spinner-border spinner-border-sm"
+                                role="status"
+                                aria-hidden="true"
+                            />
+                            Loading capacity configuration...
+                        </div>
+                    )}
+
+                    {!loading && error && (
+                        <div
+                            role="alert"
+                            style={{
+                                background: "#ffffff",
+                                border: "1px solid #dde1e9",
+                                borderLeft: "3px solid #d23232",
+                                borderRadius: "12px",
+                                boxShadow: "0 4px 18px rgba(23,43,77,0.08)",
+                                padding: "1rem 1.1rem",
+                                color: "#d23232",
+                                fontSize: "0.88rem",
+                            }}
+                        >
+                            {error}
+                        </div>
+                    )}
+
+                    {!loading && !error && config && (
+                        <RackBoard
+                            config={{
+                                RACK_COUNT: config.RACK_COUNT,
+                                LAYER_COUNT: config.LAYER_COUNT,
+                                BOX_COUNT: config.BOX_COUNT,
+                            }}
+                        />
+                    )}
                 </main>
 
             </div>
