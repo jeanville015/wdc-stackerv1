@@ -98,9 +98,12 @@ namespace WDC_STACKER.API.Services
                 request.QueryType,
                 request.RecordLimit);
 
+            // Add domain with <username>
+            string usernameWDomain = "AD/" + username;
+
             try
             {
-                using var client = CreateClient(username, password);
+                using var client = CreateClient(usernameWDomain, password);
 
                 var response = await client.QueryAsync(new FeatsServiceReference.QueryRequest
                 {

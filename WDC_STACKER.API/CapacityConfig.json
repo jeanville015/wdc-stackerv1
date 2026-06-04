@@ -1,11 +1,9 @@
 {
-  "RACK_COUNT": 3,
-  "LAYER_COUNT": 4,
-  "BOX_COUNT": 10,
-
-  "MAX_QTY_PER_BOX": 200,
-
+  "RACK_COUNT": 1,
+  "LAYER_COUNT": 1,
+  "BOX_COUNT": 3,
+  "MAX_ITEM_PER_BOX": 10,
   "TARGET_QTY": 7200,
   "TARGET_TRAY_COUNT": 30,
-  "ValidOperation": "302500 BRC OPERATION HOLD"
+  "ValidOperation": "462000 WAFER RELEASE"
 }

@@ -5,6 +5,7 @@
         public int RACK_COUNT { get; set; }
         public int LAYER_COUNT { get; set; }
         public int BOX_COUNT { get; set; }
+        public int MAX_ITEM_PER_BOX { get; set; }
         public int TARGET_QTY { get; set; }
         public int TARGET_TRAY_COUNT { get; set; }
         public string ValidOperation { get; set; } = string.Empty;

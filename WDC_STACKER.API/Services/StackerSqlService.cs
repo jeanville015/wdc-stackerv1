@@ -37,6 +37,9 @@ public class StackerSqlService
         const string sql = """
         SELECT 
             bd.[BOXNO],
+            bd.[RACKNUM],
+            bd.[LAYERROWNUM],
+            bd.[LAYERCOLNUM],
             COUNT(ha.[BOXNAME]) AS BoxListCount,
             CAST(
                 (COUNT(ha.[BOXNAME]) * 100.0) / NULLIF(@BaselineCount, 0) 
@@ -44,7 +47,7 @@ public class StackerSqlService
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] bd
         LEFT JOIN [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] ha 
             ON bd.[BOXNO] = ha.[BOXNAME]
-        GROUP BY bd.[BOXNO]
+        GROUP BY bd.[BOXNO], bd.[RACKNUM], bd.[LAYERROWNUM],bd.[LAYERCOLNUM]
         ORDER BY bd.[BOXNO];
         """;
 
@@ -63,8 +66,11 @@ public class StackerSqlService
             results.Add(new BoxView
             {
                 BoxNo = reader.GetString(0),
-                BoxListCount = reader.GetInt32(1),
-                BoxListPercentage = reader.GetDecimal(2)
+                RackNum = reader.GetInt16(1),
+                LayerRowNum = reader.GetInt16(2),
+                LayerColNum = reader.GetInt16(3),
+                BoxListCount = reader.GetInt32(4),
+                BoxListPercentage = reader.GetDecimal(5)
             });
         }
 

@@ -1,13 +1,18 @@
 import { useState, type KeyboardEvent, type CSSProperties } from "react";
 import { scanApi, assignApi } from "../api/stackerApi";
 import { useAuth } from "../context/AuthContext";
+import type { BoxView } from "../types/stacker";
+
+interface LeftNavProps {
+    onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
+}
 
 interface FeedbackState {
     message: string;
     type: "success" | "error" | "idle";
 }
 
-export default function LeftNav() {
+export default function LeftNav({onGridViewBoxesLoaded }: LeftNavProps) {
     const { user } = useAuth();
 
     const [scanValue, setScanValue] = useState("");
@@ -42,8 +47,10 @@ export default function LeftNav() {
             const result = await scanApi(holder, user.token);
 
             if (result.Success && result.CanAssign) {
-                window.alert("Validation Pass!");
+                //window.alert("Validation Pass!");
+                showFeedback("Validation Pass!", "success");
                 setAssignEnabled(true);
+                onGridViewBoxesLoaded?.(result.GridViewBoxes ?? []);
                 showFeedback(result.Message, "success");
             } else {
                 setAssignEnabled(false);

@@ -8,8 +8,6 @@ import {
     Button,
     Spinner,
     Alert,
-    Row,
-    Col,
     Stack,
 } from 'react-bootstrap';
 
@@ -37,8 +35,20 @@ const ConfigPage = () => {
     }, [config]);
 
     const handleChange = (field: keyof CapacityConfig, value: string) => {
-        if (!form) return;
-        setForm({ ...form, [field]: parseInt(value) || 0 });
+        setForm(prev => {
+            if (!prev) return prev;
+
+            const currentValue = prev[field];
+            const nextValue =
+                typeof currentValue === 'number'
+                    ? (value === '' ? 0 : Number(value))
+                    : value;
+
+            return {
+                ...prev,
+                [field]: nextValue,
+            } as CapacityConfig;
+        });
     };
 
     const handleSave = () => {
@@ -101,24 +111,29 @@ const ConfigPage = () => {
             <Card className="shadow-sm border-0">
                 <Card.Body className="p-4">
                     <Form>
-                        {fields.map(field => (
-                            <Form.Group
-                                key={field}
-                                controlId={`field-${field}`}
-                                className="d-flex align-items-center mb-3"
-                            >
-                                <Form.Label className="fw-medium small text-secondary text-uppercase mb-0 me-3 text-end" style={{ width: '50%' }}>
-                                    {toLabel(field)}
-                                </Form.Label>
-                                <Form.Control
-                                    type="number"
-                                    value={form[field]}
-                                    min={0}
-                                    onChange={e => handleChange(field, e.target.value)}
-                                    style={{ width: '50%' }}
-                                />
-                            </Form.Group>
-                        ))}
+                        {fields.map(field => {
+                            const fieldValue = form[field];
+                            const isNumberField = typeof fieldValue === 'number';
+
+                            return (
+                                <Form.Group
+                                    key={field}
+                                    controlId={`field-${field}`}
+                                    className="d-flex align-items-center mb-3"
+                                >
+                                    <Form.Label className="fw-medium small text-secondary text-uppercase mb-0 me-3 text-end" style={{ width: '50%' }}>
+                                        {toLabel(field)}
+                                    </Form.Label>
+                                    <Form.Control
+                                        type={isNumberField ? 'number' : 'text'}
+                                        value={fieldValue}
+                                        min={isNumberField ? 0 : undefined}
+                                        onChange={e => handleChange(field, e.target.value)}
+                                        style={{ width: '50%' }}
+                                    />
+                                </Form.Group>
+                            );
+                        })}
                     </Form>
                 </Card.Body>
 

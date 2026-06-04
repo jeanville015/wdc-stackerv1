@@ -1,7 +1,10 @@
 import type { CSSProperties } from "react";
+import type { BoxView } from "../../types/stacker";
 
-const GREY_TONES = ["#f8f8f8", "#f1f1f1", "#e8e8e8", "#dfdfdf", "#d6d6d6"];
 const GREY_TONE = "#e8e8e8";
+const BLUE_DARK = "#0052cc";
+const BLUE_LIGHT = "#cfe3ff";
+const BLUE_BORDER = "#003d99";
 
 const baseLabelCellStyle: CSSProperties = {
     display: "flex",
@@ -24,6 +27,11 @@ const baseCellStyle: CSSProperties = {
     borderRadius: "8px",
     border: "1px solid #cfd5dd",
     boxShadow: "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
+    width: "100%",
+    height: "100%",
+    minHeight: "48px",
+    boxSizing: "border-box",
+    overflow: "hidden",
 };
 
 export const rackBoardStyle: CSSProperties = {
@@ -59,13 +67,6 @@ export const rackTitleStyle: CSSProperties = {
     textTransform: "uppercase",
 };
 
-export const rackSubTitleStyle: CSSProperties = {
-    margin: 0,
-    color: "#7a869a",
-    fontSize: "0.72rem",
-    letterSpacing: "0.05em",
-};
-
 export const rackScrollStyle: CSSProperties = {
     overflowX: "auto",
     overflowY: "hidden",
@@ -74,8 +75,8 @@ export const rackScrollStyle: CSSProperties = {
 
 export const rackGridStyle = (boxCount: number, layerCount: number): CSSProperties => ({
     display: "grid",
-    gridTemplateColumns: `clamp(96px, 14vw, 140px) repeat(${boxCount}, minmax(48px, 1fr))`,
-    gridTemplateRows: `32px repeat(${layerCount}, 48px)`,
+    gridTemplateColumns: `clamp(96px, 14vw, 140px) repeat(${boxCount}, minmax(72px, 1fr))`,
+    gridTemplateRows: `32px repeat(${layerCount}, minmax(56px, auto))`,
     gap: "8px",
     width: "100%",
     minWidth: "100%",
@@ -100,13 +101,29 @@ export const rowLabelCellStyle: CSSProperties = {
     boxSizing: "border-box",
 };
 
-export const getGreyCellStyle = (): CSSProperties => {
+export const getEmptyCellStyle = (): CSSProperties => {
     return {
         ...baseCellStyle,
-        width: "100%",
-        height: "100%",
-        minHeight: "48px",
         background: GREY_TONE,
-        boxSizing: "border-box",
+    };
+};
+
+export const getMappedCellStyle = (box: BoxView): CSSProperties => {
+    const percentage = Math.min(Math.max(Number(box.BoxListPercentage), 0), 100);
+
+    return {
+        ...baseCellStyle,
+        background: `linear-gradient(90deg, ${BLUE_DARK} 0%, ${BLUE_DARK} ${percentage}%, ${BLUE_LIGHT} ${percentage}%, ${BLUE_LIGHT} 100%)`,
+        border: box.IsSuggestedTarget
+            ? `2px solid ${BLUE_BORDER}`
+            : "1px solid #8bbcff",
+        padding: "0.25rem",
+        outline: box.IsSuggestedTarget
+            ? `2px solid ${BLUE_BORDER}`
+            : "none",
+        outlineOffset: box.IsSuggestedTarget ? "-5px" : "0",
+        boxShadow: box.IsSuggestedTarget
+            ? `inset 0 0 0 2px #ffffff, 0 0 0 2px ${BLUE_BORDER}, 0 4px 10px rgba(0,82,204,0.35)`
+            : "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
     };
 };

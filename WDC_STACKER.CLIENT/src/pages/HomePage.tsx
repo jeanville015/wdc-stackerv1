@@ -1,9 +1,10 @@
-import { type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import LeftNav from "../components/LeftNav";
 import RackBoard from "../components/home/RackBoard";
 import { useAuth } from "../context/AuthContext";
 import { useCapacityConfig } from "../hooks/useCapacityConfig";
+import type { BoxView } from "../types/stacker";
 
 const shellStyle: CSSProperties = {
     minHeight: "100vh",
@@ -65,6 +66,7 @@ export default function HomePage() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { config, loading, error } = useCapacityConfig();
+    const [gridViewBoxes, setGridViewBoxes] = useState<BoxView[]>([]);
 
     const handleLogout = () => {
         logout();
@@ -141,7 +143,7 @@ export default function HomePage() {
             <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
                 {/* Left navigation pane */}
-                <LeftNav />
+                <LeftNav onGridViewBoxesLoaded={setGridViewBoxes} />
 
                 {/* Main content area */}
                 <main
@@ -226,6 +228,7 @@ export default function HomePage() {
                                 LAYER_COUNT: config.LAYER_COUNT,
                                 BOX_COUNT: config.BOX_COUNT,
                             }}
+                            boxes={gridViewBoxes}
                         />
                     )}
                 </main>

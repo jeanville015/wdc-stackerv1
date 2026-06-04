@@ -6,9 +6,21 @@ export interface ScanResponse {
     CanAssign: boolean;
     Message: string;
     Holder: string;
-    HolderJob: Record<string, string>;
+    HolderJob: Record<string, string>; 
     RawQueryResult: FeatsQueryResponse | null;
+    GridViewBoxes: BoxView[];
+
 }
+export interface BoxView {
+    BoxNo: string;
+    RackNum: number;
+    LayerRowNum: number;
+    LayerColNum: number;
+    BoxListCount: number;
+    BoxListPercentage: number;
+    IsSuggestedTarget: boolean;
+}
+/** ---------------------------------- */
 
 
 /** Response from POST /api/stacker/assign */
