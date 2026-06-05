@@ -23,7 +23,7 @@ namespace WDC_STACKER.API.Aggregate
         public async Task<GridViewBoxMapResult> MapGridViewBoxData()
         {
             var config = await _capacityConfigService.GetAsync();
-            var boxes = await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.BOX_COUNT);
+            var boxes = await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX);
 
             ///<summary>
             ///Identifying certain box in inside the GridView with the following rules/steps:
@@ -155,6 +155,7 @@ namespace WDC_STACKER.API.Aggregate
             var fieldNames = new[]
             {
                 "Holder",
+                "BuildCode",
                 "Job",
                 "JobLevel",
                 "Operation",
@@ -225,7 +226,8 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             // 2. ParentHolder must have value
-            if (string.IsNullOrWhiteSpace(parentHolder))
+            //if (string.IsNullOrWhiteSpace(parentHolder))
+            if (!string.IsNullOrWhiteSpace(parentHolder))
             {
                 return new ScanHolderJobResponse
                 {
@@ -279,6 +281,172 @@ namespace WDC_STACKER.API.Aggregate
                 GridViewBoxes = gridViewBoxMap.Boxes
             };
 
+        }
+
+        public async Task<AssignHolderResponse> AssignHolderAsync(AssignHolderRequest request, string token)
+        {
+            var holder = request.Holder.Trim();
+            var boxNo = request.BoxNo.Trim();
+
+            if (!_credentialStore.TryGet(token, out var credentials))
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "Invalid or expired token."
+                };
+            }
+
+            var holderJobResult = await ExecuteFeatsQueryAsync(
+                Holder: holder,
+                queryType: "HolderJob",
+                fieldNames: new[] { "BuildCode", "BinName", "ProductName" },
+                filterName: "Holder",
+                filterValue: holder,
+                recordLimit: 250,
+                username: credentials.Username,
+                password: credentials.Password);
+
+            if (!holderJobResult.Success)
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = holderJobResult.Message,
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            var row = holderJobResult.ParsedResult.Rows.FirstOrDefault();
+
+            if (row is null)
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "HolderJob record was not found.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            var buildCode = GetField(row, "BuildCode");
+            var binName = GetField(row, "BinName");
+            var productName = GetField(row, "ProductName");
+
+            if (binName.Length != 5)
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "BinName length is not eligible.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(buildCode) || string.IsNullOrWhiteSpace(productName))
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "BuildCode or ProductName is missing.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            var config = await _capacityConfigService.GetAsync();
+            var firstPartKey = $"{buildCode[0]}{binName[^1]}";
+
+            var firstPart = string.Empty;
+
+            if (string.Equals(firstPartKey, nameof(config.SJ), StringComparison.OrdinalIgnoreCase))
+            {
+                firstPart = config.SJ;
+            }
+            else if (string.Equals(firstPartKey, nameof(config.SD), StringComparison.OrdinalIgnoreCase))
+            {
+                firstPart = config.SD;
+            }
+            else
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "BuildCode and BinName combination is not eligible.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            var secondPart = productName[^1].ToString();
+            var thirdPart = binName[..4];
+            var lecValue = firstPart + secondPart + thirdPart;
+
+            var boxExists = await _stackerSqlService.BoxNoExistsAsync(boxNo);
+
+            var boxDetails = boxExists
+                ? null
+                : new BoxDetailsInsertData
+                {
+                    BoxNo = boxNo,
+                    RackNum = request.RackNum,
+                    LayerRowNum = request.LayerRowNum,
+                    LayerColNum = request.LayerColNum,
+                    UpdateBy = credentials.Username,
+                    UpdateTs = DateTime.Now
+                };
+
+            var holderAssign = new HolderAssignInsertData
+            {
+                Holder = holder,
+                BoxName = boxNo,
+                ProductName = productName,
+                Lec = lecValue,
+                Factory = buildCode
+            };
+
+            try
+            {
+                await _stackerSqlService.InsertAssignmentAsync(boxDetails, holderAssign);
+            }
+            catch
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Lec = lecValue,
+                    Message = "Unable to Assign.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            var gridViewBoxMap = await MapGridViewBoxData();
+
+            return new AssignHolderResponse
+            {
+                Success = true,
+                Holder = holder,
+                BoxName = boxNo,
+                Lec = lecValue,
+                BoxDetailsCreated = !boxExists,
+                GridViewBoxes = gridViewBoxMap.Boxes,
+                Message = boxExists
+                    ? "Holder assigned successfully."
+                    : "Box created and holder assigned successfully.",
+                RawQueryResult = holderJobResult
+            };
         }
 
         private static string GetField(Dictionary<string, string> row, string fieldName)

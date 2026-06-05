@@ -24,9 +24,22 @@ export interface BoxView {
 
 
 /** Response from POST /api/stacker/assign */
+export interface AssignRequest {
+    Holder: string;
+    BoxNo: string;
+    RackNum: number;
+    LayerRowNum: number;
+    LayerColNum: number;
+}
+
 export interface AssignResponse {
-    success: boolean;
-    message: string;
+    Success: boolean;
+    Message: string;
+    Holder: string;
+    BoxName: string;
+    Lec: string;
+    BoxDetailsCreated: boolean;
+    GridViewBoxes: BoxView[];
 }
 
 export interface FeatsQueryTableResult {

@@ -1,5 +1,5 @@
 import { API_BASE } from "../config/apiConfig";
-import type { ScanResponse, AssignResponse } from "../types/stacker";
+import type { ScanResponse, AssignRequest, AssignResponse } from "../types/stacker";
 
 function getErrorMessage(err: unknown, fallback: string): string {
     const error = err as { message?: string; Message?: string };
@@ -38,10 +38,17 @@ export async function scanApi(holder: string, token: string): Promise<ScanRespon
     return response.json() as Promise<ScanResponse>;
 }
 
-export async function assignApi(): Promise<AssignResponse> {
+export async function assignApi(
+    request: AssignRequest,
+    token: string
+): Promise<AssignResponse> {
     const response = await fetch(`${API_BASE}/api/stacker/assign`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(request),
     });
 
     if (!response.ok) {
@@ -51,4 +58,3 @@ export async function assignApi(): Promise<AssignResponse> {
 
     return response.json() as Promise<AssignResponse>;
 }
-

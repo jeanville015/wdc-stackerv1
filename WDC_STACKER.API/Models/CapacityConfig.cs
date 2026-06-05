@@ -9,5 +9,11 @@
         public int TARGET_QTY { get; set; }
         public int TARGET_TRAY_COUNT { get; set; }
         public string ValidOperation { get; set; } = string.Empty;
+        public int FJ { get; set; }
+        public int FD { get; set; }
+        public int FS { get; set; }
+        public string SJ { get; set; } = string.Empty;
+        public string SD { get; set; } = string.Empty;
+
     }
 }

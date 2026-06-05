@@ -76,4 +76,89 @@ public class StackerSqlService
 
         return results; 
     }
+
+    public async Task<bool> BoxNoExistsAsync(string boxNo)
+    {
+        const string sql = """
+        SELECT COUNT(1)
+        FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS]
+        WHERE [BOXNO] = @BOXNO;
+        """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+
+        command.Parameters.Add("@BOXNO", SqlDbType.VarChar, 50).Value = boxNo;
+
+        await connection.OpenAsync();
+
+        var count = (int)(await command.ExecuteScalarAsync() ?? 0);
+        return count > 0;
+    }
+
+    public async Task InsertAssignmentAsync(BoxDetailsInsertData? boxDetails, HolderAssignInsertData holderAssign)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            if (boxDetails is not null)
+            {
+                await InsertBoxDetailsAsync(boxDetails, connection, transaction);
+            }
+
+            await InsertHolderAssignAsync(holderAssign, connection, transaction);
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    private static async Task InsertBoxDetailsAsync(BoxDetailsInsertData data, SqlConnection connection, SqlTransaction transaction)
+    {
+        const string sql = """
+        INSERT INTO [BOXMANAGEMENT].[BOX].[BOXDETAILS]
+            ([BOXNO], [RACKNUM], [LAYERROWNUM], [LAYERCOLNUM], [UPDATEBY], [UPDATETS])
+        VALUES
+            (@BOXNO, @RACKNUM, @LAYERROWNUM, @LAYERCOLNUM, @UPDATEBY, @UPDATETS);
+        """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+
+        command.Parameters.Add("@BOXNO", SqlDbType.VarChar, 50).Value = data.BoxNo;
+        command.Parameters.Add("@RACKNUM", SqlDbType.SmallInt).Value = data.RackNum;
+        command.Parameters.Add("@LAYERROWNUM", SqlDbType.SmallInt).Value = data.LayerRowNum;
+        command.Parameters.Add("@LAYERCOLNUM", SqlDbType.SmallInt).Value = data.LayerColNum;
+        command.Parameters.Add("@UPDATEBY", SqlDbType.VarChar, 50).Value = data.UpdateBy;
+        command.Parameters.Add("@UPDATETS", SqlDbType.DateTime).Value = data.UpdateTs;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task InsertHolderAssignAsync(HolderAssignInsertData data, SqlConnection connection, SqlTransaction transaction)
+    {
+        const string sql = """
+        INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory])
+        VALUES
+            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory);
+        """;
+
+        await using var command = new SqlCommand(sql, connection, transaction);
+
+        command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = data.Holder;
+        command.Parameters.Add("@BOXNAME", SqlDbType.VarChar, 50).Value = data.BoxName;
+        command.Parameters.Add("@PRODUCTNAME", SqlDbType.NChar, 10).Value = data.ProductName;
+        command.Parameters.Add("@LEC", SqlDbType.VarChar, 50).Value = data.Lec;
+        command.Parameters.Add("@Factory", SqlDbType.VarChar, 50).Value = data.Factory;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
 }

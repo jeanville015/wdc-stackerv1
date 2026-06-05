@@ -13,12 +13,12 @@ interface FeedbackState {
 }
 
 export default function LeftNav({onGridViewBoxesLoaded }: LeftNavProps) {
-    const { user } = useAuth();
-
+    const { user } = useAuth(); 
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
     const [assignLoading, setAssignLoading] = useState(false);
     const [assignEnabled, setAssignEnabled] = useState(false);
+    const [suggestedTargetBox, setSuggestedTargetBox] = useState<BoxView | null>(null);
     const [feedback, setFeedback] = useState<FeedbackState>({
         message: "",
         type: "idle",
@@ -36,32 +36,33 @@ export default function LeftNav({onGridViewBoxesLoaded }: LeftNavProps) {
 
         if (!user?.token) {
             setAssignEnabled(false);
+            setSuggestedTargetBox(null);
             showFeedback("Login token is missing. Please sign in again.", "error");
             return;
         }
 
         setScanLoading(true);
         setAssignEnabled(false);
+        setSuggestedTargetBox(null);
 
         try {
             const result = await scanApi(holder, user.token);
+            const boxes = result.GridViewBoxes ?? [];
+            const suggestedTarget = boxes.find((box) => box.IsSuggestedTarget) ?? null;
 
-            if (result.Success && result.CanAssign) {
-                //window.alert("Validation Pass!");
-                showFeedback("Validation Pass!", "success");
+            onGridViewBoxesLoaded?.(boxes);
+
+            if (result.Success && result.CanAssign && suggestedTarget) {
+                setSuggestedTargetBox(suggestedTarget);
                 setAssignEnabled(true);
-                onGridViewBoxesLoaded?.(result.GridViewBoxes ?? []);
-                showFeedback(result.Message, "success");
+                showFeedback(result.Message || "Validation Pass!", "success");
             } else {
                 setAssignEnabled(false);
                 showFeedback(result.Message || "Validation failed.", "error");
             }
         } catch (err) {
             setAssignEnabled(false);
-            showFeedback(
-                err instanceof Error ? err.message : "Scan error.",
-                "error"
-            );
+            showFeedback(err instanceof Error ? err.message : "Scan error.", "error");
         } finally {
             setScanLoading(false);
         }
@@ -72,13 +73,50 @@ export default function LeftNav({onGridViewBoxesLoaded }: LeftNavProps) {
     };
 
     const handleAssign = async () => {
+        const holder = scanValue.trim();
+
+        if (!holder) {
+            showFeedback("Holder is required.", "error");
+            return;
+        }
+
+        if (!user?.token) {
+            showFeedback("Login token is missing. Please sign in again.", "error");
+            return;
+        }
+
+        if (!suggestedTargetBox) {
+            showFeedback("No suggested target box was found.", "error");
+            return;
+        }
+
         setAssignLoading(true);
+
         try {
-            const result = await assignApi();
-            showFeedback(
-                result.success ? result.message : result.message,
-                result.success ? "success" : "error"
+            const result = await assignApi(
+                {
+                    Holder: holder,
+                    BoxNo: suggestedTargetBox.BoxNo,
+                    RackNum: suggestedTargetBox.RackNum,
+                    LayerRowNum: suggestedTargetBox.LayerRowNum,
+                    LayerColNum: suggestedTargetBox.LayerColNum,
+                },
+                user.token
             );
+
+            if (result.GridViewBoxes) {
+                onGridViewBoxesLoaded?.(result.GridViewBoxes);
+            }
+
+            showFeedback(
+                result.Message || (result.Success ? "Assign successful." : "Unable to Assign."),
+                result.Success ? "success" : "error"
+            );
+
+            if (result.Success) {
+                setAssignEnabled(false);
+                setSuggestedTargetBox(null);
+            }
         } catch (err) {
             showFeedback(
                 err instanceof Error ? err.message : "Assign error.",
@@ -153,6 +191,7 @@ export default function LeftNav({onGridViewBoxesLoaded }: LeftNavProps) {
                     onChange={(e) => {
                         setScanValue(e.target.value);
                         setAssignEnabled(false);
+                        setSuggestedTargetBox(null);
                     }}
                     onKeyDown={handleKeyDown}
                     disabled={scanLoading}
