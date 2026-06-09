@@ -392,6 +392,20 @@ namespace WDC_STACKER.API.Aggregate
             var thirdPart = binName[..4];
             var lecValue = firstPart + secondPart + thirdPart;
 
+            var holderAlreadyAssigned = await _stackerSqlService.HolderAssignExistsAsync(holder);
+
+            if (holderAlreadyAssigned)
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "Holder is already assigned.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
             var boxExists = await _stackerSqlService.BoxNoExistsAsync(boxNo);
 
             var boxDetails = boxExists
@@ -412,7 +426,9 @@ namespace WDC_STACKER.API.Aggregate
                 BoxName = boxNo,
                 ProductName = productName,
                 Lec = lecValue,
-                Factory = buildCode
+                Factory = buildCode,
+                UpdateBy = credentials.Username,
+                UpdateTs = DateTime.Now
             };
 
             try

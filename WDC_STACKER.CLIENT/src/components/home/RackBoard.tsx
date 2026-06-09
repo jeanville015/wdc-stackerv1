@@ -4,7 +4,10 @@ import type { CapacityConfig } from "../../types/models";
 import type { BoxView } from "../../types/stacker";
 import { rackBoardStyle } from "./rackGridStyles";
 
-type RackBoardConfig = Pick<CapacityConfig, "RACK_COUNT" | "LAYER_COUNT" | "BOX_COUNT">;
+type RackBoardConfig = Pick<
+    CapacityConfig,
+    "RACK_COUNT" | "LAYER_COUNT" | "BOX_COUNT" | "MAX_ITEM_PER_BOX"
+>;
 
 interface RackBoardProps {
     config: RackBoardConfig;
@@ -25,6 +28,7 @@ export default function RackBoard({ config, boxes = [] }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
     const boxCount = Math.max(0, config.BOX_COUNT);
+    const maxItemPerBox = Math.max(0, config.MAX_ITEM_PER_BOX);
 
     if (rackCount === 0) {
         return <div style={emptyStateStyle}>No racks configured.</div>;
@@ -42,6 +46,7 @@ export default function RackBoard({ config, boxes = [] }: RackBoardProps) {
                         rackNumber={rackNumber}
                         layerCount={layerCount}
                         boxCount={boxCount}
+                        maxItemPerBox={maxItemPerBox}
                         boxes={rackBoxes}
                     />
                 );

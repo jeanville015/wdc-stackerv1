@@ -1,308 +1,107 @@
-import { useState, type KeyboardEvent, type CSSProperties } from "react";
-import { scanApi, assignApi } from "../api/stackerApi";
-import { useAuth } from "../context/AuthContext";
-import type { BoxView } from "../types/stacker";
+import { NavLink } from "react-router-dom";
+import type { CSSProperties } from "react";
 
-interface LeftNavProps {
-    onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
-}
+const navStyle: CSSProperties = {
+    width: "220px",
+    minWidth: "220px",
+    backgroundColor: "#003d99",
+    backgroundImage: `
+        linear-gradient(160deg, #0052cc 0%, #003d99 100%),
+        linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px)
+    `,
+    backgroundSize: "auto, 28px 28px, 28px 28px",
+    borderRight: "1px solid rgba(255,255,255,0.14)",
+    padding: "1.25rem 0.85rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+    color: "#ffffff",
+};
 
-interface FeedbackState {
-    message: string;
-    type: "success" | "error" | "idle";
-}
+const brandBlockStyle: CSSProperties = {
+    padding: "0.35rem 0.25rem 0.85rem",
+};
 
-export default function LeftNav({onGridViewBoxesLoaded }: LeftNavProps) {
-    const { user } = useAuth(); 
-    const [scanValue, setScanValue] = useState("");
-    const [scanLoading, setScanLoading] = useState(false);
-    const [assignLoading, setAssignLoading] = useState(false);
-    const [assignEnabled, setAssignEnabled] = useState(false);
-    const [suggestedTargetBox, setSuggestedTargetBox] = useState<BoxView | null>(null);
-    const [feedback, setFeedback] = useState<FeedbackState>({
-        message: "",
-        type: "idle",
-    });
+const badgeStyle: CSSProperties = {
+    display: "inline-block",
+    fontSize: "0.58rem",
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    color: "#00c5ff",
+    border: "1px solid rgba(0,197,255,0.35)",
+    padding: "0.2rem 0.45rem",
+    borderRadius: "2px",
+    marginBottom: "0.65rem",
+};
 
-    const showFeedback = (message: string, type: "success" | "error") => {
-        setFeedback({ message, type });
-        setTimeout(() => setFeedback({ message: "", type: "idle" }), 3500);
-    };
+const titleStyle: CSSProperties = {
+    margin: 0,
+    color: "#ffffff",
+    fontSize: "0.95rem",
+    fontWeight: 800,
+    letterSpacing: "0.08em",
+};
 
-    const handleScan = async () => {
-        const holder = scanValue.trim();
+const accentStyle: CSSProperties = {
+    width: "34px",
+    height: "2px",
+    background: "#00c5ff",
+    borderRadius: "2px",
+    marginTop: "0.55rem",
+};
 
-        if (!holder) return;
+const navGroupStyle: CSSProperties = {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.45rem",
+};
 
-        if (!user?.token) {
-            setAssignEnabled(false);
-            setSuggestedTargetBox(null);
-            showFeedback("Login token is missing. Please sign in again.", "error");
-            return;
-        }
+const navTitleStyle: CSSProperties = {
+    margin: 0,
+    padding: "0 0.25rem",
+    color: "rgba(255,255,255,0.48)",
+    fontSize: "0.62rem",
+    fontWeight: 700,
+    letterSpacing: "0.14em",
+    textTransform: "uppercase",
+};
 
-        setScanLoading(true);
-        setAssignEnabled(false);
-        setSuggestedTargetBox(null);
+const getLinkStyle = ({ isActive }: { isActive: boolean }): CSSProperties => ({
+    display: "block",
+    padding: "0.65rem 0.75rem",
+    borderRadius: "7px",
+    textDecoration: "none",
+    fontSize: "0.82rem",
+    fontWeight: 700,
+    color: isActive ? "#ffffff" : "rgba(255,255,255,0.72)",
+    background: isActive ? "rgba(0,197,255,0.18)" : "rgba(255,255,255,0.055)",
+    border: isActive
+        ? "1px solid rgba(0,197,255,0.42)"
+        : "1px solid rgba(255,255,255,0.08)",
+    boxShadow: isActive ? "0 0 10px rgba(0,197,255,0.16)" : "none",
+});
 
-        try {
-            const result = await scanApi(holder, user.token);
-            const boxes = result.GridViewBoxes ?? [];
-            const suggestedTarget = boxes.find((box) => box.IsSuggestedTarget) ?? null;
-
-            onGridViewBoxesLoaded?.(boxes);
-
-            if (result.Success && result.CanAssign && suggestedTarget) {
-                setSuggestedTargetBox(suggestedTarget);
-                setAssignEnabled(true);
-                showFeedback(result.Message || "Validation Pass!", "success");
-            } else {
-                setAssignEnabled(false);
-                showFeedback(result.Message || "Validation failed.", "error");
-            }
-        } catch (err) {
-            setAssignEnabled(false);
-            showFeedback(err instanceof Error ? err.message : "Scan error.", "error");
-        } finally {
-            setScanLoading(false);
-        }
-    };
-
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") handleScan();
-    };
-
-    const handleAssign = async () => {
-        const holder = scanValue.trim();
-
-        if (!holder) {
-            showFeedback("Holder is required.", "error");
-            return;
-        }
-
-        if (!user?.token) {
-            showFeedback("Login token is missing. Please sign in again.", "error");
-            return;
-        }
-
-        if (!suggestedTargetBox) {
-            showFeedback("No suggested target box was found.", "error");
-            return;
-        }
-
-        setAssignLoading(true);
-
-        try {
-            const result = await assignApi(
-                {
-                    Holder: holder,
-                    BoxNo: suggestedTargetBox.BoxNo,
-                    RackNum: suggestedTargetBox.RackNum,
-                    LayerRowNum: suggestedTargetBox.LayerRowNum,
-                    LayerColNum: suggestedTargetBox.LayerColNum,
-                },
-                user.token
-            );
-
-            if (result.GridViewBoxes) {
-                onGridViewBoxesLoaded?.(result.GridViewBoxes);
-            }
-
-            showFeedback(
-                result.Message || (result.Success ? "Assign successful." : "Unable to Assign."),
-                result.Success ? "success" : "error"
-            );
-
-            if (result.Success) {
-                setAssignEnabled(false);
-                setSuggestedTargetBox(null);
-            }
-        } catch (err) {
-            showFeedback(
-                err instanceof Error ? err.message : "Assign error.",
-                "error"
-            );
-        } finally {
-            setAssignLoading(false);
-        }
-    };
-
-    const feedbackStyle: CSSProperties =
-        feedback.type === "success"
-            ? {
-                background: "rgba(0,82,204,0.07)",
-                borderLeft: "3px solid #0052cc",
-                color: "#0052cc",
-            }
-            : feedback.type === "error"
-                ? {
-                    background: "rgba(210,50,50,0.07)",
-                    borderLeft: "3px solid #d23232",
-                    color: "#d23232",
-                }
-                : {};
-
+export default function LeftNav() {
     return (
-        <aside
-            style={{
-                width: "280px",
-                minWidth: "280px",
-                background: "#ffffff",
-                borderRight: "1px solid #dde1e9",
-                display: "flex",
-                flexDirection: "column",
-                padding: "1.75rem 1.25rem",
-                gap: "1.5rem",
-            }}
-        >
-            <p
-                className="text-uppercase fw-semibold mb-0"
-                style={{ fontSize: "0.62rem", letterSpacing: "0.25em", color: "#00c5ff" }}
-            />
-
-            <div
-                style={{
-                    background: "#f4f5f7",
-                    border: "1px solid #dde1e9",
-                    borderRadius: "10px",
-                    padding: "1rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.75rem",
-                }}
-            >
-                <label
-                    htmlFor="scan-input"
-                    className="fw-semibold mb-0"
-                    style={{
-                        fontSize: "0.72rem",
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        color: "#172b4d",
-                    }}
-                />
-
-                <input
-                    id="scan-input"
-                    type="text"
-                    className="form-control"
-                    placeholder="Scan Holder Number..."
-                    value={scanValue}
-                    onChange={(e) => {
-                        setScanValue(e.target.value);
-                        setAssignEnabled(false);
-                        setSuggestedTargetBox(null);
-                    }}
-                    onKeyDown={handleKeyDown}
-                    disabled={scanLoading}
-                    style={{
-                        border: "1.5px solid #dde1e9",
-                        borderRadius: "7px",
-                        color: "#172b4d",
-                        fontSize: "0.88rem",
-                        padding: "0.55rem 0.8rem",
-                        background: "#ffffff",
-                    }}
-                />
-
-                <button
-                    className="btn w-100 fw-bold"
-                    onClick={handleScan}
-                    disabled={scanLoading || !scanValue.trim()}
-                    style={{
-                        background: scanLoading || !scanValue.trim()
-                            ? "#a0b4d6"
-                            : "linear-gradient(90deg, #0052cc 0%, #0065ff 100%)",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: "7px",
-                        padding: "0.55rem",
-                        fontSize: "0.78rem",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        boxShadow: scanLoading || !scanValue.trim()
-                            ? "none"
-                            : "0 3px 10px rgba(0,82,204,0.25)",
-                        transition: "all 0.15s",
-                    }}
-                >
-                    {scanLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm me-2"
-                                role="status"
-                                aria-hidden="true"
-                            />
-                            validating...
-                        </>
-                    ) : (
-                        "Validate"
-                    )}
-                </button>
+        <aside style={navStyle}>
+            <div style={brandBlockStyle}>
+                <span style={badgeStyle}>Western Digital</span>
+                <h2 style={titleStyle}>PWD STACKER</h2>
+                <div style={accentStyle} />
             </div>
 
-            <div>
-                <p
-                    className="fw-semibold mb-2"
-                    style={{
-                        fontSize: "0.72rem",
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        color: "#172b4d",
-                    }}
-                >
-                    Assignment
-                </p>
+            <nav style={navGroupStyle} aria-label="Main navigation">
+                <p style={navTitleStyle}>Navigation</p>
 
-                <button
-                    className="btn w-100 fw-bold"
-                    onClick={handleAssign}
-                    disabled={assignLoading || !assignEnabled}
-                    style={{
-                        background: assignLoading || !assignEnabled
-                            ? "#a0b4d6"
-                            : "linear-gradient(90deg, #003d99 0%, #0052cc 100%)",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: "7px",
-                        padding: "0.6rem",
-                        fontSize: "0.78rem",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        boxShadow: assignLoading || !assignEnabled
-                            ? "none"
-                            : "0 3px 10px rgba(0,61,153,0.25)",
-                        transition: "all 0.15s",
-                    }}
-                >
-                    {assignLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm me-2"
-                                role="status"
-                                aria-hidden="true"
-                            />
-                            Assigning...
-                        </>
-                    ) : (
-                        "Assign"
-                    )}
-                </button>
-            </div>
+                <NavLink to="/" style={getLinkStyle}>
+                    Home
+                </NavLink>
 
-            {feedback.type !== "idle" && (
-                <div
-                    className="px-3 py-2"
-                    style={{
-                        ...feedbackStyle,
-                        borderRadius: "0 7px 7px 0",
-                        fontSize: "0.78rem",
-                        lineHeight: 1.5,
-                    }}
-                >
-                    {feedback.message}
-                </div>
-            )}
+                <NavLink to="/config" style={getLinkStyle}>
+                    Configuration
+                </NavLink>
+            </nav>
         </aside>
     );
 }

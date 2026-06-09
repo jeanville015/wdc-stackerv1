@@ -143,11 +143,13 @@ public class StackerSqlService
 
     private static async Task InsertHolderAssignAsync(HolderAssignInsertData data, SqlConnection connection, SqlTransaction transaction)
     {
+        const string process = "PWD";
+
         const string sql = """
         INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
-            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory])
+            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [UPDATEBY], [UPDATETS])
         VALUES
-            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory);
+            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @UPDATEBY, @UPDATETS);
         """;
 
         await using var command = new SqlCommand(sql, connection, transaction);
@@ -157,8 +159,30 @@ public class StackerSqlService
         command.Parameters.Add("@PRODUCTNAME", SqlDbType.NChar, 10).Value = data.ProductName;
         command.Parameters.Add("@LEC", SqlDbType.VarChar, 50).Value = data.Lec;
         command.Parameters.Add("@Factory", SqlDbType.VarChar, 50).Value = data.Factory;
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process;
+        command.Parameters.Add("@UPDATEBY", SqlDbType.VarChar, 50).Value = data.UpdateBy;
+        command.Parameters.Add("@UPDATETS", SqlDbType.DateTime).Value = data.UpdateTs;
 
         await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<bool> HolderAssignExistsAsync(string holder)
+    {
+        const string sql = """
+        SELECT COUNT(1)
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+        WHERE [HOLDER] = @HOLDER;
+        """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+
+        command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder;
+
+        await connection.OpenAsync();
+
+        var count = (int)(await command.ExecuteScalarAsync() ?? 0);
+        return count > 0;
     }
 
 }

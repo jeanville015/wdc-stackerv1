@@ -17,6 +17,7 @@ interface RackPanelProps {
     rackNumber: number;
     layerCount: number;
     boxCount: number;
+    maxItemPerBox: number;
     boxes?: BoxView[];
 }
 
@@ -29,7 +30,7 @@ const emptyGridStyle: CSSProperties = {
     fontSize: "0.84rem",
 };
 
-export default function RackPanel({ rackNumber, layerCount, boxCount, boxes = [], }: RackPanelProps)
+export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], }: RackPanelProps)
 {
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
     const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1);
@@ -108,7 +109,7 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, boxes = []
                                                     overflowWrap: "anywhere",
                                                 }}
                                             >
-                                                {box.BoxNo} ({Number(box.BoxListPercentage).toFixed(2)}%)
+                                                {box.BoxNo} ({box.BoxListCount}/{maxItemPerBox})
                                             </span>
                                         )}
                                     </div>

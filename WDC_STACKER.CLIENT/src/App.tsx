@@ -3,6 +3,7 @@ import './App.css'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import AppShell from './components/AppShell'
 import LoginPage from './pages/LoginPage'
 import HomePage from './pages/HomePage'
 import ConfigPage from './pages/ConfigPage'
@@ -17,21 +18,15 @@ function App() {
 
                     {/* Protected */}
                     <Route
-                        path="/"
                         element={
                             <ProtectedRoute>
-                                <HomePage />
+                                <AppShell />
                             </ProtectedRoute>
                         }
-                    />
-                    <Route
-                        path="/config"
-                        element={
-                            <ProtectedRoute>
-                                <ConfigPage />
-                            </ProtectedRoute>
-                        }
-                    />
+                    >
+                        <Route path="/" element={<HomePage />} />
+                        <Route path="/config" element={<ConfigPage />} />
+                    </Route>
 
                     {/* Catch-all → root (ProtectedRoute redirects to /login if not authenticated) */}
                     <Route path="*" element={<Navigate to="/" replace />} />

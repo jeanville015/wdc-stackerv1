@@ -1,6 +1,6 @@
 {
   "RACK_COUNT": 3,
-  "LAYER_COUNT": 3,
+  "LAYER_COUNT": 5,
   "BOX_COUNT": 4,
   "MAX_ITEM_PER_BOX": 10,
   "TARGET_QTY": 7200,
