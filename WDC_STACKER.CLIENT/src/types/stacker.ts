@@ -56,3 +56,17 @@ export interface FeatsQueryResponse {
     RawXml: string;
     ParsedResult: FeatsQueryTableResult;
 }
+
+export interface BoxAssignment {
+    Holder: string;
+    ProductName: string;
+    Factory: string;
+    Lec: string;
+    Status: string;
+}
+
+export interface DisassociateResponse {
+    Success: boolean;
+    Message: string;
+    GridViewBoxes: BoxView[];
+}

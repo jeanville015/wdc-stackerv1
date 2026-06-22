@@ -1,5 +1,5 @@
 import { API_BASE } from "../config/apiConfig";
-import type { ScanResponse, AssignRequest, AssignResponse } from "../types/stacker";
+import type { ScanResponse, AssignRequest, AssignResponse, BoxAssignment, DisassociateResponse, } from "../types/stacker";
 
 function getErrorMessage(err: unknown, fallback: string): string {
     const error = err as { message?: string; Message?: string };
@@ -38,10 +38,7 @@ export async function scanApi(holder: string, token: string): Promise<ScanRespon
     return response.json() as Promise<ScanResponse>;
 }
 
-export async function assignApi(
-    request: AssignRequest,
-    token: string
-): Promise<AssignResponse> {
+export async function assignApi(request: AssignRequest, token: string): Promise<AssignResponse>{
     const response = await fetch(`${API_BASE}/api/stacker/assign`, {
         method: "POST",
         headers: {
@@ -57,4 +54,40 @@ export async function assignApi(
     }
 
     return response.json() as Promise<AssignResponse>;
+}
+
+export async function getBoxAssignmentsApi(boxName: string, token: string): Promise<BoxAssignment[]> {
+    const response = await fetch(
+        `${API_BASE}/api/stacker/boxes/${encodeURIComponent(boxName)}/assignments`,
+        {
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(err, "Unable to load box assignments."));
+    }
+
+    return response.json() as Promise<BoxAssignment[]>;
+}
+
+export async function disassociateHolderApi(holder: string, token: string): Promise<DisassociateResponse> {
+    const response = await fetch(`${API_BASE}/api/stacker/assignments`, {
+        method: "DELETE",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ Holder: holder }),
+    });
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(err, "Unable to disassociate holder."));
+    }
+
+    return response.json() as Promise<DisassociateResponse>;
 }

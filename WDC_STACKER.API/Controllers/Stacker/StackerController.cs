@@ -19,6 +19,11 @@ namespace WDC_STACKER.API.Controllers.Stacker
             _aggregate = aggregate;
         }
 
+        public class ScanHolderRequest
+        {
+            public string Holder { get; set; } = string.Empty;
+        }
+
         [HttpPost("scan")]
         public async Task<IActionResult> Scan([FromBody] ScanHolderRequest request)
         {
@@ -84,10 +89,46 @@ namespace WDC_STACKER.API.Controllers.Stacker
 
             return string.Empty;
         }
-    }
+         
+        [HttpGet("boxes/{boxName}/assignments")]
+        public async Task<IActionResult> GetBoxAssignments(string boxName)
+        {
 
-    public class ScanHolderRequest
-    {
-        public string Holder { get; set; } = string.Empty;
-    }
+            var token = GetBearerToken(Request); 
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            if (string.IsNullOrWhiteSpace(boxName))
+                return BadRequest(new { message = "BoxName is required." });
+
+            var assignments = await _aggregate.GetBoxAssignmentsAsync(boxName.Trim());
+
+            return Ok(assignments);
+        }
+         
+        [HttpDelete("assignments")]
+        public async Task<IActionResult> Disassociate( [FromBody] DisassociateHolderRequest request)
+        {
+            var token = GetBearerToken(Request);
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Bearer token is required." });
+            }
+
+            var result = await _aggregate.DisassociateHolderAsync(request.Holder.Trim(), token);
+
+            if (!result.Success)
+                return Conflict(new { message = result.Message });
+
+            return Ok(new
+            {
+                result.Success,
+                result.Message,
+                GridViewBoxes = result.Boxes
+            });
+        }
+
+    } 
 }

@@ -173,6 +173,42 @@ namespace WDC_STACKER.API.Services
                 Rows = rows
             };
         }
+        /// <summary>
+        /// The ! operators only suppress nullable-reference warnings. 
+        /// The actual runtime values remain null. The WSDL marks HolderType, 
+        /// Resource, and NextOp with minOccurs="0", although the FEATS server may still apply its own business validation.
+        /// See MoveOutAsync(parameters)
+        /// </summary>
+        /// <param name="holder"></param>
+        /// <param name="holderType"></param>
+        /// <param name="resource"></param>
+        /// <param name="nextOp"></param>
+        /// <param name="username"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public async Task<(bool Success, string Message)> MoveOutAsync(string holder, string? holderType, string? resource, string? nextOp, string username, string password)
+        {
+            _logger.LogInformation("FEATS MoveOut -> holder={Holder}",holder);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password);
+                await client.MoveOutAsync(holder, holderType!, resource!, nextOp!);
+                return (true,"FEATS MoveOut completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS MoveOut failed for holder={Holder}", holder);
+                return (false, $"FEATS MoveOut failed: {ex.Message}"
+                );
+            }
+        }
 
     }
 }

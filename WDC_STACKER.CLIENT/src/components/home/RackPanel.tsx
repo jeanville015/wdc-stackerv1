@@ -1,4 +1,5 @@
-import { Fragment, type CSSProperties } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
+import BoxAssignmentsModal from "./BoxAssignmentsModal";
 import type { BoxView } from "../../types/stacker";
 import {
     columnLabelCellStyle,
@@ -19,6 +20,7 @@ interface RackPanelProps {
     boxCount: number;
     maxItemPerBox: number;
     boxes?: BoxView[];
+    onBoxesChanged: (boxes: BoxView[]) => void;
 }
 
 const emptyGridStyle: CSSProperties = {
@@ -30,8 +32,9 @@ const emptyGridStyle: CSSProperties = {
     fontSize: "0.84rem",
 };
 
-export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], }: RackPanelProps)
+export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], onBoxesChanged, }: RackPanelProps)
 {
+    const [selectedBoxName, setSelectedBoxName] = useState<string | null>(null);
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
     const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1);
 
@@ -87,15 +90,20 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                                 const box = findBox(layerNumber, columnNumber);
 
                                 return (
-                                    <div
+                                    <button
+                                        type="button"
                                         key={`rack-${rackNumber}-layer-${layerNumber}-box-${columnNumber}`}
-                                        style={
+                                        disabled={!box}
+                                        onClick={() => box && setSelectedBoxName(box.BoxNo)}
+                                        style={{
+                                            ...(box ? getMappedCellStyle(box) : getEmptyCellStyle()),
+                                            cursor: box ? "pointer" : "default",
+                                        }}
+                                        aria-label={
                                             box
-                                                ? getMappedCellStyle(box)
-                                                : getEmptyCellStyle()
+                                                ? `Open assignments for ${box.BoxNo}`
+                                                : `Empty rack cell`
                                         }
-                                        aria-label={`Rack ${rackNumber}, Layer ${layerNumber}, Box ${columnNumber}`}
-                                        title={`Rack ${rackNumber} / Layer ${layerNumber} / Box ${columnNumber}`}
                                     >
                                         {box && (
                                             <span
@@ -112,13 +120,20 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                                                 {box.BoxNo} ({box.BoxListCount}/{maxItemPerBox})
                                             </span>
                                         )}
-                                    </div>
+                                    </button>
                                 );
                             })}
                         </Fragment>
                     ))}
                 </div>
             </div>
+            {selectedBoxName && (
+                <BoxAssignmentsModal
+                    boxName={selectedBoxName}
+                    onClose={() => setSelectedBoxName(null)}
+                    onBoxesChanged={onBoxesChanged}
+                />
+            )}
         </article>
     );
 }

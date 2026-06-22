@@ -185,4 +185,62 @@ public class StackerSqlService
         return count > 0;
     }
 
+    public async Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName)
+    {
+        const string sql = """
+        SELECT
+            [HOLDER],
+            [PRODUCTNAME],
+            [FACTORY],
+            [LEC],
+            [STATUS]
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+        WHERE [BOXNAME] = @BOXNAME
+        ORDER BY [HOLDER];
+        """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+
+        command.Parameters.Add("@BOXNAME", SqlDbType.VarChar, 50).Value = boxName;
+
+        await connection.OpenAsync();
+
+        var results = new List<BoxAssignment>();
+        await using var reader = await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            results.Add(new BoxAssignment
+            {
+                Holder = Convert.ToString(reader["HOLDER"])?.Trim() ?? string.Empty,
+                ProductName = Convert.ToString(reader["PRODUCTNAME"])?.Trim() ?? string.Empty,
+                Factory = Convert.ToString(reader["FACTORY"])?.Trim() ?? string.Empty,
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? string.Empty,
+                Status = Convert.ToString(reader["STATUS"])?.Trim() ?? string.Empty
+            });
+        }
+
+        return results;
+    }
+
+    public async Task<bool> DisassociateHolderAsync(string holder)
+    {
+        const string sql = """
+        DELETE
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+        WHERE [HOLDER] = @HOLDER
+          AND [STATUS] = 'RELEASE';
+        """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+
+        command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder;
+
+        await connection.OpenAsync();
+
+        return await command.ExecuteNonQueryAsync() == 1;
+    }
+
 }

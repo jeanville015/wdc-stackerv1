@@ -20,36 +20,42 @@ namespace WDC_STACKER.API.Aggregate
 
         }
 
+        public bool IsSessionTokenValid(string token)
+        {
+            return _credentialStore.TryGet(token, out _);
+        }
+
         public async Task<GridViewBoxMapResult> MapGridViewBoxData()
         {
             var config = await _capacityConfigService.GetAsync();
             var boxes = await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX);
 
             ///<summary>
-            ///Identifying certain box in inside the GridView with the following rules/steps:
+            ///Identifying certain box inside the GridView with the following rules/steps:
             /// 
             /// 1. Check the items in List<BoxView>, Identify the one with the smallest value (less than 100.00 but above 0.00) in BoxListPercentage . 
             ///    Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px. 
-            ///    If more than one item in List<BoxView> has the same smallest value(less than 100.00 but above 0.00) in BoxListPercentage(eg. 1.00 is the smallest value and 2 or 3 items' BoxListPercentage has that same value), 
+            ///    
+            /// 2. If more than one item in List<BoxView> has the same smallest value(less than 100.00 but above 0.00) in BoxListPercentage(eg. 1.00 is the smallest value and 2 or 3 items' BoxListPercentage has that same value), 
             ///    Find the one that has the smallest RackNum, LayerRowNum, and LayerColNum. Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
             ///
-            /// 3.If there is no item / items in List < BoxView > whose BoxListPercentage value is below 100.00 and above 0.00, find the one with 0.00 value.Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
-            ///   But if there are more than one whose BoxListPercentage = 0.00, find the one that has the smallest RackNum, LayerRowNum, and LayerColNum. Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
+            /// 3. If there is no item / items in List <BoxView> whose BoxListPercentage value is below 100.00 and above 0.00, find the one with 0.00 value.Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
+            ///    But if there are more than one whose BoxListPercentage = 0.00, find the one that has the smallest RackNum, LayerRowNum, and LayerColNum. Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
             /// 
             /// </summary> 
-            /// 
+
             foreach (var box in boxes)
             {
                 box.IsSuggestedTarget = false;
             }
 
             var suggested = boxes
-        .Where(x => x.BoxListPercentage > 0 && x.BoxListPercentage < 100)
-        .OrderBy(x => x.BoxListPercentage)
-        .ThenBy(x => x.RackNum)
-        .ThenBy(x => x.LayerRowNum)
-        .ThenBy(x => x.LayerColNum)
-        .FirstOrDefault();
+                .Where(x => x.BoxListPercentage > 0 && x.BoxListPercentage < 100)
+                .OrderBy(x => x.BoxListPercentage)
+                .ThenBy(x => x.RackNum)
+                .ThenBy(x => x.LayerRowNum)
+                .ThenBy(x => x.LayerColNum)
+                .FirstOrDefault();
 
             suggested ??= boxes
                 .Where(x => x.BoxListPercentage == 0)
@@ -491,5 +497,105 @@ namespace WDC_STACKER.API.Aggregate
 
             return await _featsService.QueryAsync(request, username, password);
         }
+
+        public Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName)
+        {
+            return _stackerSqlService.GetBoxAssignmentsAsync(boxName);
+        }
+
+        public async Task<(bool Success, string Message, List<BoxView> Boxes)> DisassociateHolderAsync(string holder, string token)
+        {
+            if (!_credentialStore.TryGet(token, out var credentials))
+            {
+                return (
+                    false,
+                    "Invalid or expired token.",
+                    new List<BoxView>()
+                );
+            }
+
+            //-- INSIGHT HOLD CHECK :START -----------------------------------------------\\
+            var holderJobResult = await ExecuteFeatsQueryAsync(
+                Holder: holder,
+                queryType: "HolderJob",
+                fieldNames: new[] { "HoldReason", "HoldComment" },
+                filterName: "Holder",
+                filterValue: holder,
+                recordLimit: 250,
+                username: credentials.Username,
+                password: credentials.Password
+            ); 
+            if (!holderJobResult.Success)
+            {
+                return (
+                    false,
+                    holderJobResult.Message,
+                    new List<BoxView>()
+                );
+            } 
+            var row = holderJobResult.ParsedResult.Rows.FirstOrDefault(); 
+            if (row is null)
+            {
+                return (
+                    false,
+                    "HolderJob record was not found.",
+                    new List<BoxView>()
+                );
+            } 
+            var holdReason = GetField(row, "HoldReason");
+            var holdComment = GetField(row, "HoldComment"); 
+            var fieldsAreEmpty =
+                string.IsNullOrWhiteSpace(holdReason) &&
+                string.IsNullOrWhiteSpace(holdComment); 
+            if (!fieldsAreEmpty)
+            {
+                return (
+                    false,
+                    $"{holder} is currently on InSite hold.",
+                    new List<BoxView>()
+                );
+            }
+            //-- INSIGHT HOLD CHECK :END -----------------------------------------------//
+
+            //-- MOVE-OUT TRANSACTION: START---------------------------------------------\\
+            var moveOutResult = await _featsService.MoveOutAsync(
+                holder: holder,
+                holderType: null,
+                resource: null,
+                nextOp: null,
+                username: credentials.Username,
+                password: credentials.Password
+            );
+            if (!moveOutResult.Success)
+            {
+                return (
+                    false,
+                    $"The SQL assignment was deleted, but {moveOutResult.Message}",
+                    new List<BoxView>()
+                );
+            }
+            //-- MOVE-OUT TRANSACTION: END-----------------------------------------------//
+
+            //-- SQL DELETE for HOLDER_ASSIGN: START------------------------------------\\
+            var deleted = await _stackerSqlService.DisassociateHolderAsync(holder); 
+            if (!deleted)
+            {
+                return (
+                    false,
+                    "The holder was not found or its status is not RELEASE.",
+                    new List<BoxView>()
+                );
+            }
+            //-- SQL DELETE for HOLDER_ASSIGN: END --------------------------------------//
+
+            var gridView = await MapGridViewBoxData();
+
+            return (
+                true,
+                "Holder disassociated successfully.",
+                gridView.Boxes
+            );
+        }
+
     }
 }

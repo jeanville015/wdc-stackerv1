@@ -12,6 +12,7 @@ type RackBoardConfig = Pick<
 interface RackBoardProps {
     config: RackBoardConfig;
     boxes?: BoxView[];
+    onBoxesChanged: (boxes: BoxView[]) => void;
 }
 
 const emptyStateStyle: CSSProperties = {
@@ -24,7 +25,7 @@ const emptyStateStyle: CSSProperties = {
     fontSize: "0.88rem",
 };
 
-export default function RackBoard({ config, boxes = [] }: RackBoardProps) {
+export default function RackBoard({ config, boxes = [], onBoxesChanged, }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
     const boxCount = Math.max(0, config.BOX_COUNT);
@@ -48,6 +49,7 @@ export default function RackBoard({ config, boxes = [] }: RackBoardProps) {
                         boxCount={boxCount}
                         maxItemPerBox={maxItemPerBox}
                         boxes={rackBoxes}
+                        onBoxesChanged={onBoxesChanged}
                     />
                 );
             })}

@@ -113,6 +113,7 @@ export default function HomePage() {
                             MAX_ITEM_PER_BOX: config.MAX_ITEM_PER_BOX,
                         }}
                         boxes={gridViewBoxes}
+                        onBoxesChanged={setGridViewBoxes}
                     />
                 )}
             </section>
