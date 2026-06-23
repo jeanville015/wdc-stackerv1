@@ -9,14 +9,16 @@ export interface LoginRequest {
 
 /** Response shape returned by POST /api/auth/login. */
 export interface LoginResponse {
-    success: boolean;
-    token: string;
-    username: string;
-    message: string;
+    Success: boolean;
+    Token: string;
+    Username: string;
+    Message: string;
+    CanAccessConfiguration: boolean;
 }
 
 /** The logged-in user stored in AuthContext / sessionStorage. */
 export interface AuthUser {
     username: string;
     token: string;
+    canAccessConfiguration: boolean;
 }

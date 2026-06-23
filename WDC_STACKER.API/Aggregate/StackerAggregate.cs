@@ -25,6 +25,26 @@ namespace WDC_STACKER.API.Aggregate
             return _credentialStore.TryGet(token, out _);
         }
 
+        public async Task<bool> CanAccessConfigurationAsync(string username, string password)
+        {
+            var result = await ExecuteFeatsQueryAsync(
+                queryType: "UsersByPrivilege",
+                fieldNames: new[] { "EmployeeName", "FullName" },
+                filterName: "Privilege",
+                filterValue: "TAP_FAB3ADMIN",
+                recordLimit: 250,
+                username: username,
+                password: password);
+
+            if (!result.Success)
+                return false;
+
+            return result.ParsedResult.Rows.Any(row =>
+                row.TryGetValue("EmployeeName", out var employeeName) &&
+                !string.IsNullOrWhiteSpace(employeeName) &&
+                employeeName.Contains(username, StringComparison.OrdinalIgnoreCase));
+        }
+
         public async Task<GridViewBoxMapResult> MapGridViewBoxData()
         {
             var config = await _capacityConfigService.GetAsync();
@@ -176,7 +196,6 @@ namespace WDC_STACKER.API.Aggregate
             };
 
             var holderJobResult = await ExecuteFeatsQueryAsync(
-                Holder: holder,
                 queryType: "HolderJob",
                 fieldNames: fieldNames,
                 filterName: "Holder",
@@ -306,7 +325,6 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             var holderJobResult = await ExecuteFeatsQueryAsync(
-                Holder: holder,
                 queryType: "HolderJob",
                 fieldNames: new[] { "BuildCode", "BinName", "ProductName" },
                 filterName: "Holder",
@@ -478,7 +496,7 @@ namespace WDC_STACKER.API.Aggregate
                 : string.Empty;
         }
 
-        private async Task<FeatsQueryResponse> ExecuteFeatsQueryAsync(string Holder, string queryType, string[] fieldNames, string filterName, string filterValue, int recordLimit, string username, string password)
+        private async Task<FeatsQueryResponse> ExecuteFeatsQueryAsync(string queryType, string[] fieldNames, string filterName, string filterValue, int recordLimit, string username, string password)
         {
              var request = new FeatsQueryRequest
             {
@@ -516,7 +534,6 @@ namespace WDC_STACKER.API.Aggregate
 
             //-- INSIGHT HOLD CHECK :START -----------------------------------------------\\
             var holderJobResult = await ExecuteFeatsQueryAsync(
-                Holder: holder,
                 queryType: "HolderJob",
                 fieldNames: new[] { "HoldReason", "HoldComment" },
                 filterName: "Holder",

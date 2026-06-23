@@ -25,7 +25,14 @@ function App() {
                         }
                     >
                         <Route path="/" element={<HomePage />} />
-                        <Route path="/config" element={<ConfigPage />} />
+                        <Route
+                            path="/config"
+                            element={
+                                <ProtectedRoute requireConfigurationAccess>
+                                    <ConfigPage />
+                                </ProtectedRoute>
+                            }
+                        />
                     </Route>
 
                     {/* Catch-all → root (ProtectedRoute redirects to /login if not authenticated) */}

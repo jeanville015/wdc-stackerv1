@@ -24,12 +24,14 @@ namespace WDC_STACKER.API.Aggregate
         private readonly ActiveDirectoryService _adService;
         private readonly ILogger<AuthProjectionAggregate> _logger;
         private readonly FeatsCredentialStore _featsCredentialStore;
+        private readonly StackerAggregate _stackerAggregate;
 
-        public AuthProjectionAggregate(ActiveDirectoryService adService, ILogger<AuthProjectionAggregate> logger, FeatsCredentialStore featsCredentialStore)
+        public AuthProjectionAggregate(ActiveDirectoryService adService, ILogger<AuthProjectionAggregate> logger, FeatsCredentialStore featsCredentialStore, StackerAggregate stackerAggregate)
         {
             _adService = adService;
             _logger = logger;
             _featsCredentialStore = featsCredentialStore;
+            _stackerAggregate = stackerAggregate;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request)
@@ -59,12 +61,15 @@ namespace WDC_STACKER.API.Aggregate
             _featsCredentialStore.Store(token, request.Username, request.Password);
             _logger.LogInformation("Login successful for user={Username}", adResult.Username);
 
+            var canAccessConfiguration = await _stackerAggregate.CanAccessConfigurationAsync(request.Username, request.Password);
+
             // 3. Return the ViewModel the controller forwards to React
             return new LoginResponse
             {
                 Success = true,
                 Token = token,
                 Username = adResult.DisplayName,
+                CanAccessConfiguration = canAccessConfiguration,
                 Message = "Login successful"
             };
         }

@@ -107,7 +107,7 @@ export default function LoginPage() {
         try {
             const result = await loginApi({ username: username.trim(), password });
             if (result.Success) {
-                login({ username: result.Username, token: result.Token });
+                login({ username: result.Username, token: result.Token, canAccessConfiguration: result.CanAccessConfiguration, });
                 navigate("/", { replace: true });
             } else {
                 setError(result.message || "Login failed.");

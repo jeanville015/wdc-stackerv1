@@ -70,7 +70,10 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded }: Left
     };
 
     const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") handleScan();
+        if (e.key === "Enter") {
+            e.preventDefault();
+            handleScan();
+        }
     };
 
     const handleAssign = async () => {

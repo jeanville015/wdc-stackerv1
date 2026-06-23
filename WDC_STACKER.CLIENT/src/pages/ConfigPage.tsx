@@ -15,9 +15,9 @@ import {
  *  e.g. "maxCapacity" → "Max Capacity" */
 const toLabel = (field: string) =>
     field
-        .replace(/([A-Z])/g, ' $1')
-        .replace(/_/g, ' ')
-        .replace(/^\w/, c => c.toUpperCase())
+        .replace(/_/g, " ")
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .toUpperCase()
         .trim();
 
 const ConfigPage = () => {

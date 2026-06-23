@@ -82,7 +82,7 @@ const getLinkStyle = ({ isActive }: { isActive: boolean }): CSSProperties => ({
     boxShadow: isActive ? "0 0 10px rgba(0,197,255,0.16)" : "none",
 });
 
-export default function LeftNav() {
+export default function LeftNav({ canAccessConfiguration }: LeftNavProps) {
     return (
         <aside style={navStyle}>
             <div style={brandBlockStyle}>
@@ -98,9 +98,11 @@ export default function LeftNav() {
                     Home
                 </NavLink>
 
-                <NavLink to="/config" style={getLinkStyle}>
-                    Configuration
-                </NavLink>
+                {canAccessConfiguration && (
+                    <NavLink to="/config" style={getLinkStyle}>
+                        Configuration
+                    </NavLink>
+                )}
             </nav>
         </aside>
     );

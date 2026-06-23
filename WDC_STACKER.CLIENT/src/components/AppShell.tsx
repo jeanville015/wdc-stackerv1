@@ -71,7 +71,7 @@ export default function AppShell() {
             </nav>
 
             <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-                <LeftNav />
+                <LeftNav canAccessConfiguration={!!user?.canAccessConfiguration} />
 
                 <main
                     style={{
