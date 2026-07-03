@@ -1,6 +1,10 @@
 import { NavLink } from "react-router-dom";
 import type { CSSProperties } from "react";
 
+interface LeftNavProps {
+    canAccessConfiguration: boolean;
+};
+
 const navStyle: CSSProperties = {
     width: "220px",
     minWidth: "220px",

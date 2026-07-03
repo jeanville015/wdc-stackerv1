@@ -43,7 +43,14 @@ public class StackerSqlService
             COUNT(ha.[BOXNAME]) AS BoxListCount,
             CAST(
                 (COUNT(ha.[BOXNAME]) * 100.0) / NULLIF(@BaselineCount, 0) 
-            AS DECIMAL(18, 2)) AS BoxListPercentage
+            AS DECIMAL(18, 2)) AS BoxListPercentage,
+            MAX(
+                CASE
+                    WHEN UPPER(LTRIM(RTRIM(ISNULL(ha.[STATUS], '')))) = 'RELEASE'
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS HasReleaseStatus
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] bd
         LEFT JOIN [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] ha 
             ON bd.[BOXNO] = ha.[BOXNAME]
@@ -70,7 +77,8 @@ public class StackerSqlService
                 LayerRowNum = reader.GetInt16(2),
                 LayerColNum = reader.GetInt16(3),
                 BoxListCount = reader.GetInt32(4),
-                BoxListPercentage = reader.GetDecimal(5)
+                BoxListPercentage = reader.GetDecimal(5),
+                HasReleaseStatus = reader.GetInt32(6) == 1
             });
         }
 
@@ -143,7 +151,6 @@ public class StackerSqlService
 
     private static async Task InsertHolderAssignAsync(HolderAssignInsertData data, SqlConnection connection, SqlTransaction transaction)
     {
-        const string process = "PWD";
 
         const string sql = """
         INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
@@ -159,7 +166,7 @@ public class StackerSqlService
         command.Parameters.Add("@PRODUCTNAME", SqlDbType.NChar, 10).Value = data.ProductName;
         command.Parameters.Add("@LEC", SqlDbType.VarChar, 50).Value = data.Lec;
         command.Parameters.Add("@Factory", SqlDbType.VarChar, 50).Value = data.Factory;
-        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process;
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = data.Process;
         command.Parameters.Add("@UPDATEBY", SqlDbType.VarChar, 50).Value = data.UpdateBy;
         command.Parameters.Add("@UPDATETS", SqlDbType.DateTime).Value = data.UpdateTs;
 

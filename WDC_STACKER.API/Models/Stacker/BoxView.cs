@@ -11,5 +11,6 @@ namespace WDC_STACKER.API.Models.Stacker
         public int LayerColNum { get; set; }
         public int BoxListCount { get; set; }
         public decimal BoxListPercentage { get; set; }
+        public bool HasReleaseStatus { get; set; }
     } 
 }

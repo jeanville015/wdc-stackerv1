@@ -2,6 +2,7 @@ import { useState, type KeyboardEvent, type CSSProperties } from "react";
 import { scanApi, assignApi } from "../api/stackerApi";
 import { useAuth } from "../context/AuthContext";
 import type { BoxView } from "../types/stacker";
+import { STACKER_PROCESS } from "../config/processConfig";
 
 interface LeftNavProps {
     onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
@@ -78,7 +79,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded }: Left
 
     const handleAssign = async () => {
         const holder = scanValue.trim();
-        const assignedBoxNo = suggestedTargetBox.BoxNo;
+        
 
         if (!holder) {
             showFeedback("Holder is required.", "error");
@@ -95,6 +96,8 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded }: Left
             return;
         }
 
+        const assignedBoxNo = suggestedTargetBox.BoxNo;
+
         setAssignLoading(true);
 
         try {
@@ -105,6 +108,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded }: Left
                     RackNum: suggestedTargetBox.RackNum,
                     LayerRowNum: suggestedTargetBox.LayerRowNum,
                     LayerColNum: suggestedTargetBox.LayerColNum,
+                    Process: STACKER_PROCESS,
                 },
                 user.token
             );

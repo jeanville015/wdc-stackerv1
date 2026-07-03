@@ -54,7 +54,9 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
             "http://localhost:5173",   // React dev server
-            "https://localhost:5173"
+            "https://localhost:5173",
+            "http://pbt-md-app03",
+            "https://pbt-md-app03"
         )
         .AllowAnyHeader()
         .AllowAnyMethod();

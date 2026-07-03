@@ -1,7 +1,7 @@
-import { useState, FormEvent } from "react";
+import { useState, type FormEvent, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { loginApi } from "../api/authApi";
+import { loginApi } from "../api/AuthApi";
 
 // ── Decorative grid of embossed/active buttons ────────────────────────────────
 // Seeded random so the pattern is stable across renders.
@@ -20,7 +20,7 @@ function getVariant(index: number): CellVariant {
     return "ghost";                   // near-invisible
 }
 
-const cellStyles: Record<CellVariant, React.CSSProperties> = {
+const cellStyles: Record<CellVariant, CSSProperties> = {
     active: {
         background: "rgba(0,197,255,0.22)",
         border: "1.5px solid rgba(0,197,255,0.7)",
@@ -110,7 +110,7 @@ export default function LoginPage() {
                 login({ username: result.Username, token: result.Token, canAccessConfiguration: result.CanAccessConfiguration, });
                 navigate("/", { replace: true });
             } else {
-                setError(result.message || "Login failed.");
+                setError(result.Message || "Login failed.");
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "Unexpected error.");

@@ -1,0 +1,1 @@
+export const STACKER_PROCESS = "PWD";

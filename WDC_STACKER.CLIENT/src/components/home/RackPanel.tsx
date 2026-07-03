@@ -4,6 +4,8 @@ import type { BoxView } from "../../types/stacker";
 import {
     columnLabelCellStyle,
     cornerCellStyle,
+    getBoxHighlightColor,
+    getCornerHighlightStyle,
     getMappedCellStyle,
     getEmptyCellStyle,
     rackCardStyle,
@@ -11,7 +13,7 @@ import {
     rackHeaderStyle,
     rackScrollStyle,
     rackTitleStyle,
-    rowLabelCellStyle,
+    rowLabelCellStyle, 
 } from "./rackGridStyles";
 
 interface RackPanelProps {
@@ -36,7 +38,7 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
 {
     const [selectedBoxName, setSelectedBoxName] = useState<string | null>(null);
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
-    const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1);
+    const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1); 
 
     const findBox = (layerNumber: number, columnNumber: number) => {
         return boxes.find(
@@ -87,7 +89,12 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                             <div style={rowLabelCellStyle}>Layer {layerNumber}</div>
 
                             {columns.map((columnNumber) => {
-                                const box = findBox(layerNumber, columnNumber);
+                                const box = findBox(layerNumber, columnNumber); const percentage = box
+                                    ? Math.min(Math.max(Number(box.BoxListPercentage), 0), 100)
+                                    : 0;
+                                const label = box
+                                    ? `${box.BoxNo} (${box.BoxListCount}/${maxItemPerBox})`
+                                    : "";
 
                                 return (
                                     <button
@@ -97,6 +104,7 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                                         onClick={() => box && setSelectedBoxName(box.BoxNo)}
                                         style={{
                                             ...(box ? getMappedCellStyle(box) : getEmptyCellStyle()),
+                                            position: "relative",
                                             cursor: box ? "pointer" : "default",
                                         }}
                                         aria-label={
@@ -106,19 +114,59 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                                         }
                                     >
                                         {box && (
-                                            <span
-                                                style={{
-                                                    color: "#ffffff",
-                                                    fontSize: "0.68rem",
-                                                    fontWeight: 700,
-                                                    lineHeight: 1.15,
-                                                    textAlign: "center",
-                                                    textShadow: "0 1px 2px rgba(0,0,0,0.35)",
-                                                    overflowWrap: "anywhere",
-                                                }}
-                                            >
-                                                {box.BoxNo} ({box.BoxListCount}/{maxItemPerBox})
-                                            </span>
+                                            <>
+                                                <span
+                                                    style={{
+                                                        position: "absolute",
+                                                        inset: 0,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        padding: "0.25rem",
+                                                        color: "#003d99",
+                                                        fontSize: "0.68rem",
+                                                        fontWeight: 700,
+                                                        lineHeight: 1.15,
+                                                        textAlign: "center",
+                                                        overflowWrap: "anywhere",
+                                                        pointerEvents: "none",
+                                                    }}
+                                                >
+                                                    {label}
+                                                </span>
+
+                                                <span
+                                                    style={{
+                                                        position: "absolute",
+                                                        inset: 0,
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                        padding: "0.25rem",
+                                                        color: "#ffffff",
+                                                        fontSize: "0.68rem",
+                                                        fontWeight: 700,
+                                                        lineHeight: 1.15,
+                                                        textAlign: "center",
+                                                        overflowWrap: "anywhere",
+                                                        pointerEvents: "none",
+                                                        clipPath: `inset(0 ${100 - percentage}% 0 0)`,
+                                                        textShadow: "0 1px 2px rgba(0,0,0,0.35)",
+                                                    }}
+                                                >
+                                                    {label}
+                                                </span>
+
+                                                {box.IsSuggestedTarget && (
+                                                    <>
+                                                        <span style={getCornerHighlightStyle("topLeft", getBoxHighlightColor(box))} />
+                                                        <span style={getCornerHighlightStyle("topRight", getBoxHighlightColor(box))} />
+                                                        <span style={getCornerHighlightStyle("bottomLeft", getBoxHighlightColor(box))} />
+                                                        <span style={getCornerHighlightStyle("bottomRight", getBoxHighlightColor(box))} />
+                                                    </>
+                                                )}
+
+                                            </>
                                         )}
                                     </button>
                                 );

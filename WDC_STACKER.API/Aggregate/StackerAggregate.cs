@@ -145,7 +145,8 @@ namespace WDC_STACKER.API.Aggregate
                         LayerColNum = newLayerColNum,
                         BoxListCount = 0,
                         BoxListPercentage = 0,
-                        IsSuggestedTarget = true
+                        IsSuggestedTarget = true,
+                        HasReleaseStatus = false,
                     });
 
                     return new GridViewBoxMapResult
@@ -444,6 +445,20 @@ namespace WDC_STACKER.API.Aggregate
                     UpdateTs = DateTime.Now
                 };
 
+            var process = request.Process.Trim().ToUpperInvariant();
+
+            if (process is not ("PWD" or "FGI"))
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "Invalid process.",
+                    RawQueryResult = holderJobResult
+                };
+            }
+
             var holderAssign = new HolderAssignInsertData
             {
                 Holder = holder,
@@ -451,6 +466,7 @@ namespace WDC_STACKER.API.Aggregate
                 ProductName = productName,
                 Lec = lecValue,
                 Factory = buildCode,
+                Process = process,
                 UpdateBy = credentials.Username,
                 UpdateTs = DateTime.Now
             };
@@ -535,7 +551,7 @@ namespace WDC_STACKER.API.Aggregate
             //-- INSIGHT HOLD CHECK :START -----------------------------------------------\\
             var holderJobResult = await ExecuteFeatsQueryAsync(
                 queryType: "HolderJob",
-                fieldNames: new[] { "HoldReason", "HoldComment" },
+                fieldNames: new[] { "Holder","HoldReason", "HoldComment" },
                 filterName: "Holder",
                 filterValue: holder,
                 recordLimit: 250,

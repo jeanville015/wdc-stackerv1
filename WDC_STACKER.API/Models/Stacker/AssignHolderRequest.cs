@@ -7,5 +7,6 @@
         public int RackNum { get; set; }
         public int LayerRowNum { get; set; }
         public int LayerColNum { get; set; }
+        public string Process { get; set; } = string.Empty;
     }
 }

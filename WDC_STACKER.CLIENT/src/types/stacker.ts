@@ -19,6 +19,7 @@ export interface BoxView {
     BoxListCount: number;
     BoxListPercentage: number;
     IsSuggestedTarget: boolean;
+    HasReleaseStatus: boolean;
 }
 /** ---------------------------------- */
 
@@ -30,6 +31,7 @@ export interface AssignRequest {
     RackNum: number;
     LayerRowNum: number;
     LayerColNum: number;
+    Process: string;
 }
 
 export interface AssignResponse {

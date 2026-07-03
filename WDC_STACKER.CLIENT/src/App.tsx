@@ -11,7 +11,7 @@ import ConfigPage from './pages/ConfigPage'
 function App() {
     return (
         <AuthProvider>
-            <BrowserRouter>
+            <BrowserRouter basename="/WDC_STACKER">
                 <Routes>
                     {/* Public */}
                     <Route path="/login" element={<LoginPage />} />

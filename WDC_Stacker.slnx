@@ -4,4 +4,8 @@
     <Build />
     <Deploy />
   </Project>
+  <Project Path="WDC_STACKER.CLIENT.FGI/WDC_STACKER.CLIENT.FGI.esproj">
+    <Build />
+    <Deploy />
+  </Project>
 </Solution>
