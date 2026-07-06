@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import StackerOperationControls from "../components/StackerOperationControls";
 import RackBoard from "../components/home/RackBoard";
 import { useCapacityConfig } from "../hooks/useCapacityConfig";
@@ -9,6 +9,28 @@ export default function HomePage() {
     const [gridViewBoxes, setGridViewBoxes] = useState<BoxView[]>([]);
     const [selectedTargetBox, setSelectedTargetBox] = useState<BoxView | null>(null);
     const [boxSelectionEnabled, setBoxSelectionEnabled] = useState(false);
+    const [recentlyAssignedBoxNo, setRecentlyAssignedBoxNo] = useState<string | null>(null);
+    const assignedBoxTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (assignedBoxTimerRef.current) {
+                window.clearTimeout(assignedBoxTimerRef.current);
+            }
+        };
+    }, []);
+
+    const showAssignedBoxConfirmation = (boxNo: string) => {
+        setRecentlyAssignedBoxNo(boxNo);
+
+        if (assignedBoxTimerRef.current) {
+            window.clearTimeout(assignedBoxTimerRef.current);
+        }
+
+        assignedBoxTimerRef.current = window.setTimeout(() => {
+            setRecentlyAssignedBoxNo(null);
+        }, 4000);
+    };
 
     return (
         <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
@@ -17,6 +39,7 @@ export default function HomePage() {
                 selectedTargetBox={selectedTargetBox}
                 onSelectedTargetBoxChanged={setSelectedTargetBox}
                 onBoxSelectionEnabledChanged={setBoxSelectionEnabled}
+                onAssignedBoxConfirmed={showAssignedBoxConfirmation}
             />
 
             <section style={{ flex: 1, minWidth: 0 }}>
@@ -74,6 +97,7 @@ export default function HomePage() {
                         onBoxesChanged={setGridViewBoxes}
                         boxSelectionEnabled={boxSelectionEnabled}
                         selectedTargetBox={selectedTargetBox}
+                        recentlyAssignedBoxNo={recentlyAssignedBoxNo}
                         onTargetBoxSelected={(box) => {
                             setSelectedTargetBox(box);
                             setBoxSelectionEnabled(false);

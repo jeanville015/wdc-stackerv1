@@ -6,6 +6,7 @@ import { STACKER_PROCESS } from "../config/processConfig";
 
 interface LeftNavProps {
     onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
+    onAssignedBoxConfirmed?: (boxNo: string) => void;
 }
 
 interface FeedbackState {
@@ -13,7 +14,7 @@ interface FeedbackState {
     type: "success" | "error" | "idle";
 }
 
-export default function StackerOperationControls({ onGridViewBoxesLoaded }: LeftNavProps) {
+export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssignedBoxConfirmed, }: LeftNavProps) {
     const { user } = useAuth(); 
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
@@ -123,6 +124,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded }: Left
             );
 
             if (result.Success) {
+                onAssignedBoxConfirmed?.(assignedBoxNo);
                 setAssignedBoxMessage(`Holder was assigned to ${assignedBoxNo}`);
                 setScanValue("");
                 setAssignEnabled(false);

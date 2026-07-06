@@ -15,6 +15,7 @@ interface RackBoardProps {
     onBoxesChanged: (boxes: BoxView[]) => void;
     boxSelectionEnabled: boolean;
     selectedTargetBox: BoxView | null;
+    recentlyAssignedBoxNo?: string | null;
     onTargetBoxSelected: (box: BoxView) => void;
 }
 
@@ -35,6 +36,7 @@ export default function RackBoard({
     boxSelectionEnabled,
     selectedTargetBox,
     onTargetBoxSelected,
+    recentlyAssignedBoxNo,
 }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
@@ -54,6 +56,7 @@ export default function RackBoard({
                 return (
                     <RackPanel
                         key={rackNumber}
+                        recentlyAssignedBoxNo={recentlyAssignedBoxNo}
                         rackNumber={rackNumber}
                         layerCount={layerCount}
                         boxCount={boxCount}

@@ -17,6 +17,7 @@ import {
 } from "./rackGridStyles";
 
 interface RackPanelProps {
+    recentlyAssignedBoxNo?: string | null;
     rackNumber: number;
     layerCount: number;
     boxCount: number;
@@ -34,7 +35,7 @@ const emptyGridStyle: CSSProperties = {
     fontSize: "0.84rem",
 };
 
-export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], onBoxesChanged, }: RackPanelProps)
+export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], onBoxesChanged, }: RackPanelProps)
 {
     const [selectedBoxName, setSelectedBoxName] = useState<string | null>(null);
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
@@ -89,12 +90,14 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                             <div style={rowLabelCellStyle}>Layer {layerNumber}</div>
 
                             {columns.map((columnNumber) => {
-                                const box = findBox(layerNumber, columnNumber); const percentage = box
+                                const box = findBox(layerNumber, columnNumber);
+                                const percentage = box
                                     ? Math.min(Math.max(Number(box.BoxListPercentage), 0), 100)
                                     : 0;
                                 const label = box
                                     ? `${box.BoxNo} (${box.BoxListCount}/${maxItemPerBox})`
                                     : "";
+                                const isRecentlyAssigned = recentlyAssignedBoxNo === box?.BoxNo;
 
                                 return (
                                     <button
@@ -103,7 +106,7 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                                         disabled={!box}
                                         onClick={() => box && setSelectedBoxName(box.BoxNo)}
                                         style={{
-                                            ...(box ? getMappedCellStyle(box) : getEmptyCellStyle()),
+                                            ...(box ? getMappedCellStyle(box, isRecentlyAssigned) : getEmptyCellStyle()),
                                             position: "relative",
                                             cursor: box ? "pointer" : "default",
                                         }}
@@ -163,6 +166,52 @@ export default function RackPanel({ rackNumber, layerCount, boxCount, maxItemPer
                                                         <span style={getCornerHighlightStyle("topRight", getBoxHighlightColor(box))} />
                                                         <span style={getCornerHighlightStyle("bottomLeft", getBoxHighlightColor(box))} />
                                                         <span style={getCornerHighlightStyle("bottomRight", getBoxHighlightColor(box))} />
+                                                    </>
+                                                )}
+
+                                                {isRecentlyAssigned && (
+                                                    <>
+                                                        <span
+                                                            style={{
+                                                                position: "absolute",
+                                                                top: "-10px",
+                                                                right: "-10px",
+                                                                width: "26px",
+                                                                height: "26px",
+                                                                borderRadius: "50%",
+                                                                background: "#16833a",
+                                                                border: "3px solid #ffffff",
+                                                                color: "#ffffff",
+                                                                display: "flex",
+                                                                alignItems: "center",
+                                                                justifyContent: "center",
+                                                                fontSize: "0.82rem",
+                                                                fontWeight: 800,
+                                                                zIndex: 7,
+                                                                pointerEvents: "none",
+                                                            }}
+                                                        >
+                                                            ✓
+                                                        </span>
+
+                                                        <span
+                                                            style={{
+                                                                position: "absolute",
+                                                                left: "0.35rem",
+                                                                bottom: "0.3rem",
+                                                                background: "#d8f3df",
+                                                                border: "1px solid #16833a",
+                                                                borderRadius: "6px",
+                                                                color: "#0f6b2e",
+                                                                fontSize: "0.62rem",
+                                                                fontWeight: 800,
+                                                                padding: "0.08rem 0.35rem",
+                                                                zIndex: 7,
+                                                                pointerEvents: "none",
+                                                            }}
+                                                        >
+                                                            Assigned
+                                                        </span>
                                                     </>
                                                 )}
 

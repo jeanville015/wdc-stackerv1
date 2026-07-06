@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import StackerOperationControls from "../components/StackerOperationControls";
 import RackBoard from "../components/home/RackBoard";
 import { useCapacityConfig } from "../hooks/useCapacityConfig";
@@ -7,10 +7,35 @@ import type { BoxView } from "../types/stacker";
 export default function HomePage() {  
     const { config, loading, error } = useCapacityConfig();
     const [gridViewBoxes, setGridViewBoxes] = useState<BoxView[]>([]);
+    const [recentlyAssignedBoxNo, setRecentlyAssignedBoxNo] = useState<string | null>(null);
+    const assignedBoxTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (assignedBoxTimerRef.current) {
+                window.clearTimeout(assignedBoxTimerRef.current);
+            }
+        };
+    }, []);
+
+    const showAssignedBoxConfirmation = (boxNo: string) => {
+        setRecentlyAssignedBoxNo(boxNo);
+
+        if (assignedBoxTimerRef.current) {
+            window.clearTimeout(assignedBoxTimerRef.current);
+        }
+
+        assignedBoxTimerRef.current = window.setTimeout(() => {
+            setRecentlyAssignedBoxNo(null);
+        }, 4000);
+    };
 
     return (
         <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
-            <StackerOperationControls onGridViewBoxesLoaded={setGridViewBoxes} />
+            <StackerOperationControls
+                onGridViewBoxesLoaded={setGridViewBoxes}
+                onAssignedBoxConfirmed={showAssignedBoxConfirmation}
+            />
 
             <section style={{ flex: 1, minWidth: 0 }}>
                 {loading && (
@@ -64,6 +89,7 @@ export default function HomePage() {
                             MAX_ITEM_PER_BOX: config.MAX_ITEM_PER_BOX,
                         }}
                         boxes={gridViewBoxes}
+                        recentlyAssignedBoxNo={recentlyAssignedBoxNo}
                         onBoxesChanged={setGridViewBoxes}
                     />
                 )}

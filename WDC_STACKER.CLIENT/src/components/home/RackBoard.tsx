@@ -13,6 +13,7 @@ interface RackBoardProps {
     config: RackBoardConfig;
     boxes?: BoxView[];
     onBoxesChanged: (boxes: BoxView[]) => void;
+    recentlyAssignedBoxNo?: string | null;
 }
 
 const emptyStateStyle: CSSProperties = {
@@ -25,7 +26,7 @@ const emptyStateStyle: CSSProperties = {
     fontSize: "0.88rem",
 };
 
-export default function RackBoard({ config, boxes = [], onBoxesChanged, }: RackBoardProps) {
+export default function RackBoard({ config, boxes = [], onBoxesChanged, recentlyAssignedBoxNo }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
     const boxCount = Math.max(0, config.BOX_COUNT);
@@ -44,6 +45,7 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, }: RackB
                 return (
                     <RackPanel
                         key={rackNumber}
+                        recentlyAssignedBoxNo={recentlyAssignedBoxNo}
                         rackNumber={rackNumber}
                         layerCount={layerCount}
                         boxCount={boxCount}

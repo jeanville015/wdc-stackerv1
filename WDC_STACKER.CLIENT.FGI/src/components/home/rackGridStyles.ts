@@ -173,23 +173,31 @@ export const getEmptyCellStyle = (): CSSProperties => {
     };
 };
 
-export const getMappedCellStyle = ( box: BoxView, isSelectedTarget = false ): CSSProperties => {
+export const getMappedCellStyle = (
+    box: BoxView,
+    isSelectedTarget = false,
+    isRecentlyAssigned = false
+): CSSProperties => {
     const percentage = Math.min(Math.max(Number(box.BoxListPercentage), 0), 100);
     const darkColor = box.HasReleaseStatus ? GREEN_DARK : BLUE_DARK;
     const lightColor = box.HasReleaseStatus ? GREEN_LIGHT : BLUE_LIGHT;
-    const borderColor = box.HasReleaseStatus ? GREEN_BORDER : BLUE_BORDER; 
     const cellBackground = `linear-gradient(90deg, ${darkColor} 0%, ${darkColor} ${percentage}%, ${lightColor} ${percentage}%, ${lightColor} 100%)`;
+
+    const isHighlighted = isSelectedTarget || isRecentlyAssigned;
 
     return {
         ...baseCellStyle,
         background: cellBackground,
-        border: "1px solid #8bbcff",
+        border: isRecentlyAssigned ? "3px solid #16833a" : "1px solid #8bbcff",
         padding: "0.25rem",
         outline: "none",
         outlineOffset: "0",
-        overflow: isSelectedTarget ? "visible" : "hidden",
-        boxShadow: isSelectedTarget
-            ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 10px rgba(0,82,204,0.35)"
-            : "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
+        overflow: isHighlighted ? "visible" : "hidden",
+        animation: isRecentlyAssigned ? "assignedBoxPulse 0.9s ease-out infinite" : undefined,
+        boxShadow: isRecentlyAssigned
+            ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 12px rgba(22,131,58,0.35)"
+            : isSelectedTarget
+                ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 10px rgba(0,82,204,0.35)"
+                : "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
     };
 };

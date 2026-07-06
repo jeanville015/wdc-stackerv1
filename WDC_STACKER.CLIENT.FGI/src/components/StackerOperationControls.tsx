@@ -9,6 +9,7 @@ interface StackerOperationControlsProps {
     selectedTargetBox: BoxView | null;
     onSelectedTargetBoxChanged: (box: BoxView | null) => void;
     onBoxSelectionEnabledChanged: (enabled: boolean) => void;
+    onAssignedBoxConfirmed?: (boxNo: string) => void;
 }
 interface FeedbackState {
     message: string;
@@ -20,6 +21,7 @@ export default function StackerOperationControls({
     selectedTargetBox,
     onSelectedTargetBoxChanged,
     onBoxSelectionEnabledChanged,
+    onAssignedBoxConfirmed,
 }: StackerOperationControlsProps) {
     const { user } = useAuth(); 
     const [scanValue, setScanValue] = useState("");
@@ -124,6 +126,7 @@ export default function StackerOperationControls({
             );
 
             if (result.Success) {
+                onAssignedBoxConfirmed?.(assignedBoxNo);
                 onSelectedTargetBoxChanged(null);
                 onBoxSelectionEnabledChanged(false);
                 setAssignedBoxMessage(`Holder was assigned to ${assignedBoxNo}`);
