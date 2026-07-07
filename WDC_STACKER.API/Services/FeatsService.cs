@@ -21,8 +21,11 @@ namespace WDC_STACKER.API.Services
             binding.Security.Mode = BasicHttpSecurityMode.TransportCredentialOnly;
             binding.Security.Transport.ClientCredentialType = HttpClientCredentialType.Basic;
 
-            var url = _config["SoapApi:FeatsBaseUrl"]
-                      ?? "http://hchasspda1o.legacy.shared:8181";
+            var url = _config["SoapApi:FeatsBaseUrl"];
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                throw new InvalidOperationException("Missing required configuration value: SoapApi:FeatsBaseUrl.");
+            }
 
             var endpoint = new EndpointAddress($"{url.TrimEnd('/')}/FEATS/TxnService.asmx");
 

@@ -9,7 +9,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
+static string RequireConfig(IConfiguration configuration, string key)
+{
+    var value = configuration[key];
+    return string.IsNullOrWhiteSpace(value)
+        ? throw new InvalidOperationException($"Missing required configuration value: {key}.")
+        : value;
+}
 
+RequireConfig(builder.Configuration, "SoapApi:FeatsBaseUrl");
+RequireConfig(builder.Configuration, "ActiveDirectory:Domain");
+RequireConfig(builder.Configuration, "ConnectionStrings:WdcStackerDb");
+var jwtIssuer = RequireConfig(builder.Configuration, "Jwt:Issuer");
+var jwtAudience = RequireConfig(builder.Configuration, "Jwt:Audience");
+var jwtSigningKey = RequireConfig(builder.Configuration, "Jwt:SigningKey");
 
 
 
@@ -74,10 +87,10 @@ builder.Services
             ValidateAudience = true,
             ValidateIssuerSigningKey = true,
             ValidateLifetime = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
             IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:SigningKey"]!))
+                Encoding.UTF8.GetBytes(jwtSigningKey))
         };
     });
 builder.Services.AddAuthorization();

@@ -1,4 +1,4 @@
-import { type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import RackPanel from "./RackPanel";
 import type { CapacityConfig } from "../../types/models";
 import type { BoxView } from "../../types/stacker";
@@ -31,6 +31,32 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
     const layerCount = Math.max(0, config.LAYER_COUNT);
     const boxCount = Math.max(0, config.BOX_COUNT);
     const maxItemPerBox = Math.max(0, config.MAX_ITEM_PER_BOX);
+    const rackRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+    const suggestedTarget = useMemo(
+        () => boxes.find((box) => box.IsSuggestedTarget),
+        [boxes]
+    );
+
+    useEffect(() => {
+        if (!suggestedTarget) {
+            return;
+        }
+
+        const rackElement = rackRefs.current[suggestedTarget.RackNum];
+
+        if (!rackElement) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            rackElement.scrollIntoView({
+                behavior: "smooth",
+                block: "center",
+                inline: "nearest",
+            });
+        });
+    }, [suggestedTarget?.BoxNo, suggestedTarget?.RackNum]);
 
     if (rackCount === 0) {
         return <div style={emptyStateStyle}>No racks configured.</div>;
@@ -43,16 +69,22 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
                 const rackBoxes = boxes.filter((box) => box.RackNum === rackNumber);
 
                 return (
-                    <RackPanel
+                    <div
                         key={rackNumber}
-                        recentlyAssignedBoxNo={recentlyAssignedBoxNo}
-                        rackNumber={rackNumber}
-                        layerCount={layerCount}
-                        boxCount={boxCount}
-                        maxItemPerBox={maxItemPerBox}
-                        boxes={rackBoxes}
-                        onBoxesChanged={onBoxesChanged}
-                    />
+                        ref={(element) => {
+                            rackRefs.current[rackNumber] = element;
+                        }}
+                    >
+                        <RackPanel
+                            recentlyAssignedBoxNo={recentlyAssignedBoxNo}
+                            rackNumber={rackNumber}
+                            layerCount={layerCount}
+                            boxCount={boxCount}
+                            maxItemPerBox={maxItemPerBox}
+                            boxes={rackBoxes}
+                            onBoxesChanged={onBoxesChanged}
+                        />
+                    </div>
                 );
             })}
         </section>
