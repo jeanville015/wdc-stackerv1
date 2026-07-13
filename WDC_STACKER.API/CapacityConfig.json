@@ -1,5 +1,5 @@
 {
-  "RACK_COUNT": 2000,
+  "RACK_COUNT": 650,
   "LAYER_COUNT": 5,
   "BOX_COUNT": 4,
   "MAX_ITEM_PER_BOX": 10,

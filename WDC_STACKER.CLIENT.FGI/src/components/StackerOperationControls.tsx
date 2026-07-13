@@ -161,8 +161,14 @@ export default function StackerOperationControls({
     return (
         <aside
             style={{
-                width: "280px",
-                minWidth: "280px",
+                width: "100%",
+                maxWidth: "280px",
+                minWidth: 0,
+                boxSizing: "border-box",
+                alignSelf: "start",
+                position: "sticky",
+                top: "0",
+                zIndex: 5,
                 background: "#ffffff",
                 border: "1px solid #dde1e9",
                 borderRadius: "14px",

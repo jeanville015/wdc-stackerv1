@@ -66,6 +66,7 @@ export default function BoxAssignmentsModal({
     };
 
     return (
+    <>
         <div
             className="modal d-block"
             role="dialog"
@@ -156,26 +157,53 @@ export default function BoxAssignmentsModal({
                         )}
 
                         {confirmRow && (
-                            <div className="alert alert-warning mt-3">
-                                <p className="mb-3">
-                                    Disassociate holder{" "}
-                                    <strong>{confirmRow.Holder}</strong> from{" "}
-                                    <strong>{boxName}</strong>?
-                                </p>
-                                <button
-                                    className="btn btn-danger me-2"
-                                    disabled={deleting}
-                                    onClick={disassociate}
+                            <div
+                                className="modal d-block"
+                                role="dialog"
+                                aria-modal="true"
+                                style={{ background: "rgba(9, 30, 66, 0.55)", zIndex: 1060 }}
+                                onMouseDown={() => {
+                                    if (!deleting) setConfirmRow(null);
+                                }}
+                            >
+                                <div
+                                    className="modal-dialog modal-dialog-centered"
+                                    onMouseDown={(event) => event.stopPropagation()}
                                 >
-                                    {deleting ? "Processing..." : "YES"}
-                                </button>
-                                <button
-                                    className="btn btn-secondary"
-                                    disabled={deleting}
-                                    onClick={() => setConfirmRow(null)}
-                                >
-                                    NO
-                                </button>
+                                    <div className="modal-content">
+                                        <div className="modal-header">
+                                            <h5 className="modal-title">Confirm Disassociate?</h5>
+                                        </div>
+
+                                        <div className="modal-body">
+                                            <p className="mb-2">
+                                                Are you sure you want to disassociate the Holder{" "}
+                                                <strong>{confirmRow.Holder}</strong> from{" "}
+                                                <strong>{boxName}</strong>?
+                                            </p>
+                                            <p className="mb-0 text-danger">
+                                                This action cannot be undone.
+                                            </p>
+                                        </div>
+
+                                        <div className="modal-footer">
+                                            <button
+                                                className="btn btn-secondary"
+                                                disabled={deleting}
+                                                onClick={() => setConfirmRow(null)}
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                className="btn btn-danger"
+                                                disabled={deleting}
+                                                onClick={disassociate}
+                                            >
+                                                {deleting ? "Processing..." : "Disassociate"}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -188,5 +216,6 @@ export default function BoxAssignmentsModal({
                 </div>
             </div>
         </div>
-    );
+    </>
+);
 }

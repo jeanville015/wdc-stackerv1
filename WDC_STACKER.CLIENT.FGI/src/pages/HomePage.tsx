@@ -33,7 +33,15 @@ export default function HomePage() {
     };
 
     return (
-        <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start" }}>
+        <div
+            style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)",
+                gap: "1rem",
+                alignItems: "start",
+                width: "100%",
+            }}
+        >
             <StackerOperationControls
                 onGridViewBoxesLoaded={setGridViewBoxes}
                 selectedTargetBox={selectedTargetBox}
@@ -42,7 +50,7 @@ export default function HomePage() {
                 onAssignedBoxConfirmed={showAssignedBoxConfirmation}
             />
 
-            <section style={{ flex: 1, minWidth: 0 }}>
+            <section style={{ minWidth: 0, width: "100%" }}>
                 {loading && (
                     <div
                         style={{
