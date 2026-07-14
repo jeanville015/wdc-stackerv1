@@ -32,7 +32,7 @@ public class StackerSqlService
         var count = (int)await command.ExecuteScalarAsync();
         return count > 0;
     }
-    public async Task<List<BoxView>> GetBoxListCountAndPercentageAsync(int baselineCount)
+    public async Task<List<BoxView>> GetBoxListCountAndPercentageAsync(int baselineCount, string process)
     {
         const string sql = """
         SELECT 
@@ -53,7 +53,9 @@ public class StackerSqlService
             ) AS HasReleaseStatus
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] bd
         LEFT JOIN [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] ha 
-            ON bd.[BOXNO] = ha.[BOXNAME]
+         ON bd.[BOXNO] = ha.[BOXNAME]
+        AND UPPER(LTRIM(RTRIM(ISNULL(ha.[PROCESS], '')))) = @CLIENTCODE
+        WHERE UPPER(LTRIM(RTRIM(ISNULL(bd.[CLIENTCODE], '')))) = @CLIENTCODE
         GROUP BY bd.[BOXNO], bd.[RACKNUM], bd.[LAYERROWNUM],bd.[LAYERCOLNUM]
         ORDER BY bd.[BOXNO];
         """;
@@ -62,6 +64,7 @@ public class StackerSqlService
         await using var command = new SqlCommand(sql, connection);
 
         command.Parameters.Add("@BaselineCount", SqlDbType.Int).Value = baselineCount;
+        command.Parameters.Add("@CLIENTCODE", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
 
         await connection.OpenAsync();
 
@@ -85,18 +88,20 @@ public class StackerSqlService
         return results; 
     }
 
-    public async Task<bool> BoxNoExistsAsync(string boxNo)
+    public async Task<bool> BoxNoExistsAsync(string boxNo, string clientCode)
     {
         const string sql = """
         SELECT COUNT(1)
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS]
-        WHERE [BOXNO] = @BOXNO;
+        WHERE [BOXNO] = @BOXNO
+        AND UPPER(LTRIM(RTRIM(ISNULL([CLIENTCODE], '')))) = @CLIENTCODE;
         """;
 
         await using var connection = new SqlConnection(_connectionString);
         await using var command = new SqlCommand(sql, connection);
 
         command.Parameters.Add("@BOXNO", SqlDbType.VarChar, 50).Value = boxNo;
+        command.Parameters.Add("@CLIENTCODE", SqlDbType.VarChar, 10).Value = clientCode.Trim().ToUpperInvariant();
 
         await connection.OpenAsync();
 
@@ -132,14 +137,15 @@ public class StackerSqlService
     {
         const string sql = """
         INSERT INTO [BOXMANAGEMENT].[BOX].[BOXDETAILS]
-            ([BOXNO], [RACKNUM], [LAYERROWNUM], [LAYERCOLNUM], [UPDATEBY], [UPDATETS])
+            ([BOXNO], [CLIENTCODE], [RACKNUM], [LAYERROWNUM], [LAYERCOLNUM], [UPDATEBY], [UPDATETS])
         VALUES
-            (@BOXNO, @RACKNUM, @LAYERROWNUM, @LAYERCOLNUM, @UPDATEBY, @UPDATETS);
+            (@BOXNO, @CLIENTCODE, @RACKNUM, @LAYERROWNUM, @LAYERCOLNUM, @UPDATEBY, @UPDATETS);
         """;
 
         await using var command = new SqlCommand(sql, connection, transaction);
 
         command.Parameters.Add("@BOXNO", SqlDbType.VarChar, 50).Value = data.BoxNo;
+        command.Parameters.Add("@CLIENTCODE", SqlDbType.VarChar, 10).Value = data.ClientCode;
         command.Parameters.Add("@RACKNUM", SqlDbType.SmallInt).Value = data.RackNum;
         command.Parameters.Add("@LAYERROWNUM", SqlDbType.SmallInt).Value = data.LayerRowNum;
         command.Parameters.Add("@LAYERCOLNUM", SqlDbType.SmallInt).Value = data.LayerColNum;
@@ -173,18 +179,20 @@ public class StackerSqlService
         await command.ExecuteNonQueryAsync();
     }
 
-    public async Task<bool> HolderAssignExistsAsync(string holder)
+    public async Task<bool> HolderAssignExistsAsync(string holder, string process)
     {
         const string sql = """
         SELECT COUNT(1)
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
-        WHERE [HOLDER] = @HOLDER;
+        WHERE [HOLDER] = @HOLDER
+          AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS;
         """;
 
         await using var connection = new SqlConnection(_connectionString);
         await using var command = new SqlCommand(sql, connection);
 
         command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder;
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
 
         await connection.OpenAsync();
 
@@ -192,7 +200,7 @@ public class StackerSqlService
         return count > 0;
     }
 
-    public async Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName)
+    public async Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName, string process)
     {
         const string sql = """
         SELECT
@@ -203,6 +211,7 @@ public class StackerSqlService
             [STATUS]
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
         WHERE [BOXNAME] = @BOXNAME
+        AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS
         ORDER BY [HOLDER];
         """;
 
@@ -210,6 +219,7 @@ public class StackerSqlService
         await using var command = new SqlCommand(sql, connection);
 
         command.Parameters.Add("@BOXNAME", SqlDbType.VarChar, 50).Value = boxName;
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
 
         await connection.OpenAsync();
 
@@ -231,19 +241,21 @@ public class StackerSqlService
         return results;
     }
 
-    public async Task<bool> DisassociateHolderAsync(string holder)
+    public async Task<bool> DisassociateHolderAsync(string holder, string process)
     {
         const string sql = """
         DELETE
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
         WHERE [HOLDER] = @HOLDER
-          AND [STATUS] = 'RELEASE';
+          AND [STATUS] = 'RELEASE'
+          AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS;
         """;
 
         await using var connection = new SqlConnection(_connectionString);
         await using var command = new SqlCommand(sql, connection);
 
         command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder;
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
 
         await connection.OpenAsync();
 

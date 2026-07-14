@@ -7,33 +7,50 @@ namespace WDC_STACKER.API.Services
     // You may need to install the Microsoft.AspNetCore.Http.Abstractions package into your project
     public class CapacityConfigService
     {
-        private readonly string _filePath;
+        private readonly string _contentRootPath;
+        private const string DefaultClientKey = "WDC_STACKER.CLIENT";
+
+        private static readonly IReadOnlyDictionary<string, string> ConfigFileNames =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["WDC_STACKER.CLIENT.PWD"] = "CapacityConfig.WDC_STACKER.CLIENT.PWD.json",
+                ["WDC_STACKER.CLIENT.FGI"] = "CapacityConfig.WDC_STACKER.CLIENT.FGI.json"
+            };
 
         public CapacityConfigService(IWebHostEnvironment env)
         {
-            // File sits in the Web API root folder
-            _filePath = Path.Combine(env.ContentRootPath, "CapacityConfig.json");
+            _contentRootPath = env.ContentRootPath;
         }
 
-        // READ
-        public async Task<CapacityConfig> GetAsync()
+        private string ResolveFilePath(string? clientKey)
         {
-            var json = await File.ReadAllTextAsync(_filePath);
+            var resolvedClientKey = string.IsNullOrWhiteSpace(clientKey)
+                ? DefaultClientKey
+                : clientKey.Trim();
+
+            if (!ConfigFileNames.TryGetValue(resolvedClientKey, out var fileName))
+                throw new InvalidOperationException($"Unsupported stacker client: {resolvedClientKey}");
+
+            return Path.Combine(_contentRootPath, fileName);
+        } 
+
+        public async Task<CapacityConfig> GetAsync(string? clientKey)
+        {
+            var json = await File.ReadAllTextAsync(ResolveFilePath(clientKey));
             return JsonSerializer.Deserialize<CapacityConfig>(json)!;
         }
 
-        // WRITE (covers Create, Update)
-        public async Task SaveAsync(CapacityConfig config)
+        public async Task SaveAsync(CapacityConfig config, string? clientKey)
         {
             var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
-            await File.WriteAllTextAsync(_filePath, json);
+
+            await File.WriteAllTextAsync(ResolveFilePath(clientKey), json);
         }
 
-        // RESET to defaults
-        public async Task ResetAsync()
+        public async Task ResetAsync(string? clientKey)
         {
             var defaults = new CapacityConfig
             {
@@ -43,7 +60,8 @@ namespace WDC_STACKER.API.Services
                 TARGET_QTY = 7200,
                 TARGET_TRAY_COUNT = 30
             };
-            await SaveAsync(defaults);
+
+            await SaveAsync(defaults, clientKey);
         }
     }
 }

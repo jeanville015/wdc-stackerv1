@@ -14,12 +14,17 @@ namespace WDC_STACKER.API.Controllers
         {
             _service = service;
         }
+        private string GetClientKey()
+        {
+            var clientKey = Request.Headers["X-Stacker-Client"].ToString();
+            return string.IsNullOrWhiteSpace(clientKey) ? "WDC_STACKER.CLIENT.PWD" : clientKey;
+        }
 
         // READ - GET /api/capacity-config
         [HttpGet]
         public async Task<IActionResult> Get()
         {
-            var config = await _service.GetAsync();
+            var config = await _service.GetAsync(GetClientKey());
             return Ok(config);
         }
 
@@ -27,7 +32,7 @@ namespace WDC_STACKER.API.Controllers
         [HttpPut]
         public async Task<IActionResult> Update([FromBody] CapacityConfig config)
         {
-            await _service.SaveAsync(config);
+            await _service.SaveAsync(config, GetClientKey());
             return Ok(config);
         }
 
@@ -35,7 +40,7 @@ namespace WDC_STACKER.API.Controllers
         [HttpPatch]
         public async Task<IActionResult> Patch([FromBody] CapacityConfig config)
         {
-            var existing = await _service.GetAsync();
+            var existing = await _service.GetAsync(GetClientKey());
 
             // Only update fields that are non-zero (sent by client)
             if (config.RACK_COUNT > 0) existing.RACK_COUNT = config.RACK_COUNT;
@@ -44,7 +49,7 @@ namespace WDC_STACKER.API.Controllers
             if (config.TARGET_QTY > 0) existing.TARGET_QTY = config.TARGET_QTY;
             if (config.TARGET_TRAY_COUNT > 0) existing.TARGET_TRAY_COUNT = config.TARGET_TRAY_COUNT;
 
-            await _service.SaveAsync(existing);
+            await _service.SaveAsync(config, GetClientKey());
             return Ok(existing);
         }
 
@@ -52,8 +57,8 @@ namespace WDC_STACKER.API.Controllers
         [HttpDelete("reset")]
         public async Task<IActionResult> Reset()
         {
-            await _service.ResetAsync();
-            var config = await _service.GetAsync();
+            await _service.ResetAsync(GetClientKey());
+            var config = await _service.GetAsync(GetClientKey());
             return Ok(config);
         }
     }

@@ -8,6 +8,7 @@
         public int LayerColNum { get; set; }
         public string UpdateBy { get; set; } = string.Empty;
         public DateTime UpdateTs { get; set; }
+        public string ClientCode { get; set; } = string.Empty;
     }
 
     public class HolderAssignInsertData

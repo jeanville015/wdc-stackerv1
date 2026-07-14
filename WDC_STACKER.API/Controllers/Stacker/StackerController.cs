@@ -18,6 +18,13 @@ namespace WDC_STACKER.API.Controllers.Stacker
             _logger = logger;
             _aggregate = aggregate;
         }
+        private string GetClientKey()
+        {
+            var clientKey = Request.Headers["X-Stacker-Client"].ToString();
+            return string.IsNullOrWhiteSpace(clientKey)
+                ? "WDC_STACKER.CLIENT.PWD"
+                : clientKey;
+        }
 
         public class ScanHolderRequest
         {
@@ -39,7 +46,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 "ScanHolderJob triggered for Holder={Holder}",
                 request.Holder);
 
-            var result = await _aggregate.ScanHolderJobAsync(request.Holder, token);
+            var result = await _aggregate.ScanHolderJobAsync(request.Holder, token, GetClientKey());
 
             if (!result.Success &&
                 result.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
@@ -69,7 +76,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 request.Holder,
                 request.BoxNo);
 
-            var result = await _aggregate.AssignHolderAsync(request, token);
+            var result = await _aggregate.AssignHolderAsync(request, token, GetClientKey());
 
             if (!result.Success &&
                 result.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
@@ -103,7 +110,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
             if (string.IsNullOrWhiteSpace(boxName))
                 return BadRequest(new { message = "BoxName is required." });
 
-            var assignments = await _aggregate.GetBoxAssignmentsAsync(boxName.Trim());
+            var assignments = await _aggregate.GetBoxAssignmentsAsync(boxName.Trim(), GetClientKey());
 
             return Ok(assignments);
         }
@@ -117,7 +124,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 return Unauthorized(new { message = "Bearer token is required." });
             }
 
-            var result = await _aggregate.DisassociateHolderAsync(request.Holder.Trim(), token);
+            var result = await _aggregate.DisassociateHolderAsync(request.Holder.Trim(), token, GetClientKey());
 
             if (!result.Success)
                 return Conflict(new { message = result.Message });

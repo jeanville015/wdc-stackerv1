@@ -45,10 +45,11 @@ namespace WDC_STACKER.API.Aggregate
                 employeeName.Contains(username, StringComparison.OrdinalIgnoreCase));
         }
 
-        public async Task<GridViewBoxMapResult> MapGridViewBoxData()
+        public async Task<GridViewBoxMapResult> MapGridViewBoxData(string? clientKey)
         {
-            var config = await _capacityConfigService.GetAsync();
-            var boxes = await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX);
+            var config = await _capacityConfigService.GetAsync(clientKey);
+            var process = ResolveProcess(clientKey);
+            var boxes = await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX, process);
 
             ///<summary>
             ///Identifying certain box inside the GridView with the following rules/steps:
@@ -166,7 +167,7 @@ namespace WDC_STACKER.API.Aggregate
             };
         }
 
-        public async Task<ScanHolderJobResponse> ScanHolderJobAsync(string holder, string token)
+        public async Task<ScanHolderJobResponse> ScanHolderJobAsync(string holder, string token, string? clientKey)
         {
             if (!_credentialStore.TryGet(token, out var credentials))
             {
@@ -231,7 +232,7 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            var config = await _capacityConfigService.GetAsync();
+            var config = await _capacityConfigService.GetAsync(clientKey);
 
             var operation = GetField(row, "Operation");
             var parentHolder = GetField(row, "ParentHolder");
@@ -281,7 +282,7 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             // 4. If All checks are okay (steps 1 to 3), get the grid view box mapping data
-            var gridViewBoxMap = await MapGridViewBoxData();
+            var gridViewBoxMap = await MapGridViewBoxData(clientKey);
 
             if (!gridViewBoxMap.HasSuggestedTarget)
             {
@@ -309,7 +310,7 @@ namespace WDC_STACKER.API.Aggregate
 
         }
 
-        public async Task<AssignHolderResponse> AssignHolderAsync(AssignHolderRequest request, string token)
+        public async Task<AssignHolderResponse> AssignHolderAsync(AssignHolderRequest request, string token, string? clientKey)
         {
             var holder = request.Holder.Trim();
             var boxNo = request.BoxNo.Trim();
@@ -371,7 +372,7 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Message = "BinName length is not eligible.",
+                    Message = "BinName length is not eligible.",//---------------------------------->>>
                     RawQueryResult = holderJobResult
                 };
             }
@@ -383,12 +384,12 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Message = "BuildCode or ProductName is missing.",
+                    Message = "BuildCode or ProductName is missing.", //--------------------------------------------->>
                     RawQueryResult = holderJobResult
                 };
             }
 
-            var config = await _capacityConfigService.GetAsync();
+            var config = await _capacityConfigService.GetAsync(clientKey);
             var firstPartKey = $"{buildCode[0]}{binName[^1]}";
 
             var firstPart = string.Empty;
@@ -408,7 +409,7 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Message = "BuildCode and BinName combination is not eligible.",
+                    Message = "BuildCode and BinName combination is not eligible.", //------------------------------------->>>
                     RawQueryResult = holderJobResult
                 };
             }
@@ -417,7 +418,8 @@ namespace WDC_STACKER.API.Aggregate
             var thirdPart = binName[..4];
             var lecValue = firstPart + secondPart + thirdPart;
 
-            var holderAlreadyAssigned = await _stackerSqlService.HolderAssignExistsAsync(holder);
+            var process = ResolveProcess(clientKey);
+            var holderAlreadyAssigned = await _stackerSqlService.HolderAssignExistsAsync(holder, process);
 
             if (holderAlreadyAssigned)
             {
@@ -431,12 +433,13 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            var boxExists = await _stackerSqlService.BoxNoExistsAsync(boxNo);
+            var boxExists = await _stackerSqlService.BoxNoExistsAsync(boxNo, process);
 
             var boxDetails = boxExists
                 ? null
                 : new BoxDetailsInsertData
                 {
+                    ClientCode = process,
                     BoxNo = boxNo,
                     RackNum = request.RackNum,
                     LayerRowNum = request.LayerRowNum,
@@ -444,20 +447,6 @@ namespace WDC_STACKER.API.Aggregate
                     UpdateBy = credentials.Username,
                     UpdateTs = DateTime.Now
                 };
-
-            var process = request.Process.Trim().ToUpperInvariant();
-
-            if (process is not ("PWD" or "FGI"))
-            {
-                return new AssignHolderResponse
-                {
-                    Success = false,
-                    Holder = holder,
-                    BoxName = boxNo,
-                    Message = "Invalid process.",
-                    RawQueryResult = holderJobResult
-                };
-            }
 
             var holderAssign = new HolderAssignInsertData
             {
@@ -488,7 +477,7 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            var gridViewBoxMap = await MapGridViewBoxData();
+            var gridViewBoxMap = await MapGridViewBoxData(clientKey);
 
             return new AssignHolderResponse
             {
@@ -532,12 +521,13 @@ namespace WDC_STACKER.API.Aggregate
             return await _featsService.QueryAsync(request, username, password);
         }
 
-        public Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName)
+        public Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName, string? clientKey)
         {
-            return _stackerSqlService.GetBoxAssignmentsAsync(boxName);
+            var process = ResolveProcess(clientKey);
+            return _stackerSqlService.GetBoxAssignmentsAsync(boxName, process);
         }
 
-        public async Task<(bool Success, string Message, List<BoxView> Boxes)> DisassociateHolderAsync(string holder, string token)
+        public async Task<(bool Success, string Message, List<BoxView> Boxes)> DisassociateHolderAsync(string holder, string token, string? clientKey)
         {
             if (!_credentialStore.TryGet(token, out var credentials))
             {
@@ -549,9 +539,7 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             //-- INSIGHT HOLD CHECK :START -----------------------------------------------\\
-            var holderJobResult = await ExecuteFeatsQueryAsync(
-                queryType: "HolderJob",
-                fieldNames: new[] { "Holder","HoldReason", "HoldComment" },
+            var holderJobResult = await ExecuteFeatsQueryAsync( queryType: "HolderJob", fieldNames: new[] { "Holder","HoldReason", "HoldComment" },
                 filterName: "Holder",
                 filterValue: holder,
                 recordLimit: 250,
@@ -610,7 +598,8 @@ namespace WDC_STACKER.API.Aggregate
             //-- MOVE-OUT TRANSACTION: END-----------------------------------------------//
 
             //-- SQL DELETE for HOLDER_ASSIGN: START------------------------------------\\
-            var deleted = await _stackerSqlService.DisassociateHolderAsync(holder); 
+            var process = ResolveProcess(clientKey);
+            var deleted = await _stackerSqlService.DisassociateHolderAsync(holder, process);
             if (!deleted)
             {
                 return (
@@ -621,7 +610,7 @@ namespace WDC_STACKER.API.Aggregate
             }
             //-- SQL DELETE for HOLDER_ASSIGN: END --------------------------------------//
 
-            var gridView = await MapGridViewBoxData();
+            var gridView = await MapGridViewBoxData(clientKey);
 
             return (
                 true,
@@ -629,6 +618,14 @@ namespace WDC_STACKER.API.Aggregate
                 gridView.Boxes
             );
         }
+
+        private static string ResolveProcess(string? clientKey)
+        {
+            return string.Equals(clientKey, "WDC_STACKER.CLIENT.FGI", StringComparison.OrdinalIgnoreCase)
+                ? "FGI"
+                : "PWD";
+        }
+
 
     }
 }

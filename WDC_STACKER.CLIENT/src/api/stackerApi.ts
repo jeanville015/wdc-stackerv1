@@ -1,5 +1,10 @@
 import { API_BASE } from "../config/apiConfig";
 import type { ScanResponse, AssignRequest, AssignResponse, BoxAssignment, DisassociateResponse, } from "../types/stacker";
+import { STACKER_CLIENT, STACKER_CLIENT_HEADER } from "../config/processConfig";
+
+const CLIENT_HEADERS: Record<string, string> = {
+    [STACKER_CLIENT_HEADER]: STACKER_CLIENT
+};
 
 function getErrorMessage(err: unknown, fallback: string): string {
     const error = err as { message?: string; Message?: string };
@@ -24,6 +29,7 @@ export async function scanApi(holder: string, token: string): Promise<ScanRespon
     const response = await fetch(`${API_BASE}/api/stacker/scan`, {
         method: "POST",
         headers: {
+            ...CLIENT_HEADERS,
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
         },
@@ -42,6 +48,7 @@ export async function assignApi(request: AssignRequest, token: string): Promise<
     const response = await fetch(`${API_BASE}/api/stacker/assign`, {
         method: "POST",
         headers: {
+            ...CLIENT_HEADERS,
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
         },
@@ -61,6 +68,7 @@ export async function getBoxAssignmentsApi(boxName: string, token: string): Prom
         `${API_BASE}/api/stacker/boxes/${encodeURIComponent(boxName)}/assignments`,
         {
             headers: {
+                ...CLIENT_HEADERS,
                 Authorization: `Bearer ${token}`,
             },
         }
@@ -78,6 +86,7 @@ export async function disassociateHolderApi(holder: string, token: string): Prom
     const response = await fetch(`${API_BASE}/api/stacker/assignments`, {
         method: "DELETE",
         headers: {
+            ...CLIENT_HEADERS,
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
         },
