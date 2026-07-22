@@ -1,4 +1,6 @@
-﻿using WDC_STACKER.API.Models.Feats;
+﻿
+using WDC_STACKER.API.Models;
+using WDC_STACKER.API.Models.Feats;
 using WDC_STACKER.API.Models.Stacker;
 using WDC_STACKER.API.Services;
 
@@ -49,45 +51,48 @@ namespace WDC_STACKER.API.Aggregate
         {
             var config = await _capacityConfigService.GetAsync(clientKey);
             var process = ResolveProcess(clientKey);
-            var boxes = await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX, process);
+            var isFgi = string.Equals(process, "FGI", StringComparison.OrdinalIgnoreCase);
 
-            ///<summary>
-            ///Identifying certain box inside the GridView with the following rules/steps:
-            /// 
-            /// 1. Check the items in List<BoxView>, Identify the one with the smallest value (less than 100.00 but above 0.00) in BoxListPercentage . 
-            ///    Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px. 
-            ///    
-            /// 2. If more than one item in List<BoxView> has the same smallest value(less than 100.00 but above 0.00) in BoxListPercentage(eg. 1.00 is the smallest value and 2 or 3 items' BoxListPercentage has that same value), 
-            ///    Find the one that has the smallest RackNum, LayerRowNum, and LayerColNum. Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
-            ///
-            /// 3. If there is no item / items in List <BoxView> whose BoxListPercentage value is below 100.00 and above 0.00, find the one with 0.00 value.Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
-            ///    But if there are more than one whose BoxListPercentage = 0.00, find the one that has the smallest RackNum, LayerRowNum, and LayerColNum. Highlight that box by adding an 2px border on it with darker blue shade and padding of 2px.
-            /// 
-            /// </summary> 
+            var boxes = isFgi
+                ? await _stackerSqlService.GetFgiBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX, process)
+                : await _stackerSqlService.GetBoxListCountAndPercentageAsync(config.MAX_ITEM_PER_BOX, process);
+
+            if (isFgi)
+            {
+                foreach (var box in boxes)
+                {
+                    box.ShipBoxes = await _stackerSqlService.GetFgiShipBoxesByBoxNoAsync(
+                        box.BoxNo,
+                        config.MAX_ITEM_PER_BOX_SHIPBOX,
+                        process);
+                }
+            }
 
             foreach (var box in boxes)
             {
                 box.IsSuggestedTarget = false;
+
+                foreach (var shipBox in box.ShipBoxes)
+                {
+                    shipBox.IsSuggestedTarget = false;
+                }
             }
 
-            var suggested = boxes
-                .Where(x => x.BoxListPercentage > 0 && x.BoxListPercentage < 100)
-                .OrderBy(x => x.BoxListPercentage)
-                .ThenBy(x => x.RackNum)
-                .ThenBy(x => x.LayerRowNum)
-                .ThenBy(x => x.LayerColNum)
-                .FirstOrDefault();
-
-            suggested ??= boxes
-                .Where(x => x.BoxListPercentage == 0)
-                .OrderBy(x => x.RackNum)
-                .ThenBy(x => x.LayerRowNum)
-                .ThenBy(x => x.LayerColNum)
-                .FirstOrDefault();
+            var suggested = SelectSuggestedBox(boxes);
 
             if (suggested is not null)
             {
                 suggested.IsSuggestedTarget = true;
+
+                if (isFgi && !EnsureSuggestedShipBox(suggested, config))
+                {
+                    return new GridViewBoxMapResult
+                    {
+                        Boxes = boxes,
+                        HasSuggestedTarget = false,
+                        Message = "No suggested target ShipBox was found."
+                    };
+                }
 
                 return new GridViewBoxMapResult
                 {
@@ -97,9 +102,9 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            var allBoxesAreFull = boxes.Count > 0 && boxes.All(x => x.BoxListPercentage >= 100);
+            var allBoxesAreFullOrEmpty = boxes.Count == 0 || boxes.All(x => x.BoxListPercentage >= 100);
 
-            if (allBoxesAreFull)
+            if (allBoxesAreFullOrEmpty)
             {
                 var lastBox = boxes
                     .OrderByDescending(x => x.RackNum)
@@ -107,11 +112,15 @@ namespace WDC_STACKER.API.Aggregate
                     .ThenByDescending(x => x.LayerColNum)
                     .FirstOrDefault();
 
+                var newRackNum = 1;
+                var newLayerRowNum = 1;
+                var newLayerColNum = 1;
+
                 if (lastBox is not null)
                 {
-                    var newRackNum = lastBox.RackNum;
-                    var newLayerRowNum = lastBox.LayerRowNum;
-                    var newLayerColNum = lastBox.LayerColNum;
+                    newRackNum = lastBox.RackNum;
+                    newLayerRowNum = lastBox.LayerRowNum;
+                    newLayerColNum = lastBox.LayerColNum;
 
                     if (lastBox.LayerColNum < config.BOX_COUNT)
                     {
@@ -137,26 +146,33 @@ namespace WDC_STACKER.API.Aggregate
                             Message = "All Settings are maxed out!"
                         };
                     }
-
-                    boxes.Add(new BoxView
-                    {
-                        BoxNo = $"R{newRackNum:00}L{newLayerRowNum:00}C{newLayerColNum:00}",
-                        RackNum = newRackNum,
-                        LayerRowNum = newLayerRowNum,
-                        LayerColNum = newLayerColNum,
-                        BoxListCount = 0,
-                        BoxListPercentage = 0,
-                        IsSuggestedTarget = true,
-                        HasReleaseStatus = false,
-                    });
-
-                    return new GridViewBoxMapResult
-                    {
-                        Boxes = boxes,
-                        HasSuggestedTarget = true,
-                        Message = "Grid view box data mapped successfully."
-                    };
                 }
+
+                var newBox = new BoxView
+                {
+                    BoxNo = $"R{newRackNum:00}L{newLayerRowNum:00}C{newLayerColNum:00}",
+                    RackNum = newRackNum,
+                    LayerRowNum = newLayerRowNum,
+                    LayerColNum = newLayerColNum,
+                    BoxListCount = 0,
+                    BoxListPercentage = 0,
+                    IsSuggestedTarget = true,
+                    HasReleaseStatus = false
+                };
+
+                if (isFgi)
+                {
+                    EnsureSuggestedShipBox(newBox, config);
+                }
+
+                boxes.Add(newBox);
+
+                return new GridViewBoxMapResult
+                {
+                    Boxes = boxes,
+                    HasSuggestedTarget = true,
+                    Message = "Grid view box data mapped successfully."
+                };
             }
 
             return new GridViewBoxMapResult
@@ -165,6 +181,95 @@ namespace WDC_STACKER.API.Aggregate
                 HasSuggestedTarget = false,
                 Message = "No suggested target box was found."
             };
+        }
+
+        private static BoxView? SelectSuggestedBox(List<BoxView> boxes)
+        {
+            if (boxes.Count == 0)
+                return null;
+
+            if (boxes.All(x => x.BoxListPercentage >= 100))
+                return null;
+
+            return boxes
+                .Where(x => x.BoxListPercentage < 100)
+                .OrderBy(x => x.BoxListPercentage)
+                .ThenBy(x => x.RackNum)
+                .ThenBy(x => x.LayerRowNum)
+                .ThenBy(x => x.LayerColNum)
+                .FirstOrDefault();
+        }
+
+        private static bool EnsureSuggestedShipBox(BoxView box, CapacityConfig config)
+        {
+            foreach (var shipBox in box.ShipBoxes)
+            {
+                shipBox.IsSuggestedTarget = false;
+            }
+
+            if (box.ShipBoxes.Any(x => x.ShipBoxListPercentage < 100))
+            {
+                var suggested = box.ShipBoxes
+                    .Where(x => x.ShipBoxListPercentage < 100)
+                    .OrderBy(x => x.ShipBoxListPercentage)
+                    .ThenBy(x => x.ShipBoxNum)
+                    .ThenBy(x => x.LayerRowNum)
+                    .ThenBy(x => x.LayerColNum)
+                    .FirstOrDefault();
+
+                if (suggested is not null)
+                {
+                    suggested.IsSuggestedTarget = true;
+                    return true;
+                }
+            }
+
+            var lastShipBox = box.ShipBoxes
+                .OrderByDescending(x => x.ShipBoxNum)
+                .ThenByDescending(x => x.LayerRowNum)
+                .ThenByDescending(x => x.LayerColNum)
+                .FirstOrDefault();
+
+            var newShipBoxNum = 1;
+            var newLayerRowNum = 1;
+            var newLayerColNum = 1;
+
+            if (lastShipBox is not null)
+            {
+                newShipBoxNum = lastShipBox.ShipBoxNum + 1;
+                newLayerRowNum = lastShipBox.LayerRowNum;
+                newLayerColNum = lastShipBox.LayerColNum;
+
+                if (lastShipBox.LayerColNum < config.BOX_COUNT_SHIPBOX)
+                {
+                    newLayerColNum = lastShipBox.LayerColNum + 1;
+                }
+                else if (lastShipBox.LayerRowNum < config.LAYER_COUNT_SHIPBOX)
+                {
+                    newLayerColNum = 1;
+                    newLayerRowNum = lastShipBox.LayerRowNum + 1;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            box.ShipBoxes.Add(new ShipBoxView
+            {
+                BoxNo = box.BoxNo,
+                ShipBoxName = $"{box.BoxNo}-S{newShipBoxNum:00}",
+                ShipBoxStatus = "RELEASE",
+                ShipBoxNum = newShipBoxNum,
+                LayerRowNum = newLayerRowNum,
+                LayerColNum = newLayerColNum,
+                ShipBoxListCount = 0,
+                ShipBoxListPercentage = 0,
+                IsSuggestedTarget = true,
+                HasReleaseStatus = true
+            });
+
+            return true;
         }
 
         public async Task<ScanHolderJobResponse> ScanHolderJobAsync(string holder, string token, string? clientKey)
@@ -314,6 +419,20 @@ namespace WDC_STACKER.API.Aggregate
         {
             var holder = request.Holder.Trim();
             var boxNo = request.BoxNo.Trim();
+            var process = ResolveProcess(clientKey);
+            var isFgi = string.Equals(process, "FGI", StringComparison.OrdinalIgnoreCase);
+            var shipBoxName = request.ShipBoxName.Trim();
+
+            if (isFgi && string.IsNullOrWhiteSpace(shipBoxName))
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Message = "ShipBoxName is required for FGI assignment."
+                };
+            }
 
             if (!_credentialStore.TryGet(token, out var credentials))
             {
@@ -372,7 +491,7 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Message = "BinName length is not eligible.",//---------------------------------->>>
+                    Message = "BinName length is not eligible.",
                     RawQueryResult = holderJobResult
                 };
             }
@@ -384,14 +503,13 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Message = "BuildCode or ProductName is missing.", //--------------------------------------------->>
+                    Message = "BuildCode or ProductName is missing.",
                     RawQueryResult = holderJobResult
                 };
             }
 
             var config = await _capacityConfigService.GetAsync(clientKey);
             var firstPartKey = $"{buildCode[0]}{binName[^1]}";
-
             var firstPart = string.Empty;
 
             if (string.Equals(firstPartKey, nameof(config.SJ), StringComparison.OrdinalIgnoreCase))
@@ -409,7 +527,7 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Message = "BuildCode and BinName combination is not eligible.", //------------------------------------->>>
+                    Message = "BuildCode and BinName combination is not eligible.",
                     RawQueryResult = holderJobResult
                 };
             }
@@ -418,7 +536,6 @@ namespace WDC_STACKER.API.Aggregate
             var thirdPart = binName[..4];
             var lecValue = firstPart + secondPart + thirdPart;
 
-            var process = ResolveProcess(clientKey);
             var holderAlreadyAssigned = await _stackerSqlService.HolderAssignExistsAsync(holder, process);
 
             if (holderAlreadyAssigned)
@@ -452,6 +569,7 @@ namespace WDC_STACKER.API.Aggregate
             {
                 Holder = holder,
                 BoxName = boxNo,
+                ShipBoxName = isFgi ? shipBoxName : string.Empty,
                 ProductName = productName,
                 Lec = lecValue,
                 Factory = buildCode,
@@ -462,7 +580,30 @@ namespace WDC_STACKER.API.Aggregate
 
             try
             {
-                await _stackerSqlService.InsertAssignmentAsync(boxDetails, holderAssign);
+                if (isFgi)
+                {
+                    var shipBoxExists = await _stackerSqlService.ShipBoxNameExistsAsync(shipBoxName);
+
+                    var shipBoxDetails = shipBoxExists
+                        ? null
+                        : new ShipBoxDetailsInsertData
+                        {
+                            BoxNo = boxNo,
+                            ShipBoxName = shipBoxName,
+                            ShipBoxStatus = "RELEASE",
+                            ShipBoxNum = request.ShipBoxNum,
+                            LayerRowNum = request.ShipBoxLayerRowNum,
+                            LayerColNum = request.ShipBoxLayerColNum,
+                            UpdateBy = credentials.Username,
+                            UpdateTs = DateTime.Now
+                        };
+
+                    await _stackerSqlService.InsertFgiAssignmentAsync(boxDetails, shipBoxDetails, holderAssign);
+                }
+                else
+                {
+                    await _stackerSqlService.InsertAssignmentAsync(boxDetails, holderAssign);
+                }
             }
             catch
             {
@@ -487,9 +628,11 @@ namespace WDC_STACKER.API.Aggregate
                 Lec = lecValue,
                 BoxDetailsCreated = !boxExists,
                 GridViewBoxes = gridViewBoxMap.Boxes,
-                Message = boxExists
-                    ? "Holder assigned successfully."
-                    : "Box created and holder assigned successfully.",
+                Message = isFgi
+                    ? "Holder assigned to ShipBox successfully."
+                    : boxExists
+                        ? "Holder assigned successfully."
+                        : "Box created and holder assigned successfully.",
                 RawQueryResult = holderJobResult
             };
         }
@@ -525,6 +668,38 @@ namespace WDC_STACKER.API.Aggregate
         {
             var process = ResolveProcess(clientKey);
             return _stackerSqlService.GetBoxAssignmentsAsync(boxName, process);
+        }
+
+        public async Task<List<ShipBoxView>> GetShipBoxesAsync(string boxNo, bool suggest, string? clientKey)
+        {
+            var config = await _capacityConfigService.GetAsync(clientKey);
+            var process = ResolveProcess(clientKey);
+
+            if (!string.Equals(process, "FGI", StringComparison.OrdinalIgnoreCase))
+                return new List<ShipBoxView>();
+
+            var shipBoxes = await _stackerSqlService.GetFgiShipBoxesByBoxNoAsync(
+                boxNo,
+                config.MAX_ITEM_PER_BOX_SHIPBOX,
+                process);
+
+            if (!suggest)
+                return shipBoxes;
+
+            var box = new BoxView
+            {
+                BoxNo = boxNo,
+                ShipBoxes = shipBoxes
+            };
+
+            EnsureSuggestedShipBox(box, config);
+            return box.ShipBoxes;
+        }
+
+        public Task<List<BoxAssignment>> GetShipBoxAssignmentsAsync(string boxName, string shipBoxName, string? clientKey)
+        {
+            var process = ResolveProcess(clientKey);
+            return _stackerSqlService.GetShipBoxAssignmentsAsync(boxName, shipBoxName, process);
         }
 
         public async Task<(bool Success, string Message, List<BoxView> Boxes)> DisassociateHolderAsync(string holder, string token, string? clientKey)

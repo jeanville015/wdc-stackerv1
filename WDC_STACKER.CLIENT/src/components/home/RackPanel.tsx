@@ -1,5 +1,6 @@
 import { Fragment, useState, type CSSProperties } from "react";
 import BoxAssignmentsModal from "./BoxAssignmentsModal";
+import SegmentedBox from "./SegmentedBox";
 import type { BoxView } from "../../types/stacker";
 import {
     columnLabelCellStyle,
@@ -91,12 +92,6 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
 
                             {columns.map((columnNumber) => {
                                 const box = findBox(layerNumber, columnNumber);
-                                const percentage = box
-                                    ? Math.min(Math.max(Number(box.BoxListPercentage), 0), 100)
-                                    : 0;
-                                const label = box
-                                    ? `${box.BoxNo} (${box.BoxListCount}/${maxItemPerBox})`
-                                    : "";
                                 const isRecentlyAssigned = recentlyAssignedBoxNo === box?.BoxNo;
 
                                 return (
@@ -118,47 +113,7 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
                                     >
                                         {box && (
                                             <>
-                                                <span
-                                                    style={{
-                                                        position: "absolute",
-                                                        inset: 0,
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        justifyContent: "center",
-                                                        padding: "0.25rem",
-                                                        color: "#003d99",
-                                                        fontSize: "0.68rem",
-                                                        fontWeight: 700,
-                                                        lineHeight: 1.15,
-                                                        textAlign: "center",
-                                                        overflowWrap: "anywhere",
-                                                        pointerEvents: "none",
-                                                    }}
-                                                >
-                                                    {label}
-                                                </span>
-
-                                                <span
-                                                    style={{
-                                                        position: "absolute",
-                                                        inset: 0,
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        justifyContent: "center",
-                                                        padding: "0.25rem",
-                                                        color: "#ffffff",
-                                                        fontSize: "0.68rem",
-                                                        fontWeight: 700,
-                                                        lineHeight: 1.15,
-                                                        textAlign: "center",
-                                                        overflowWrap: "anywhere",
-                                                        pointerEvents: "none",
-                                                        clipPath: `inset(0 ${100 - percentage}% 0 0)`,
-                                                        textShadow: "0 1px 2px rgba(0,0,0,0.35)",
-                                                    }}
-                                                >
-                                                    {label}
-                                                </span>
+                                                <SegmentedBox box={box} maxItemPerBox={maxItemPerBox} />
 
                                                 {box.IsSuggestedTarget && (
                                                     <>

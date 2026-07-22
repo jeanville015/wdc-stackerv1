@@ -2,10 +2,8 @@ import type { CSSProperties } from "react";
 import type { BoxView } from "../../types/stacker";
 
 const GREY_TONE = "#e8e8e8";
-const BLUE_DARK = "#0052cc";
 const BLUE_LIGHT = "#cfe3ff";
 const BLUE_BORDER = "#003d99";
-const GREEN_DARK = "#16833a";
 const GREEN_LIGHT = "#d8f3df";
 const GREEN_BORDER = "#0f6b2e";
 
@@ -177,16 +175,11 @@ export const getMappedCellStyle = (
     box: BoxView,
     isRecentlyAssigned = false
 ): CSSProperties => {
-    const percentage = Math.min(Math.max(Number(box.BoxListPercentage), 0), 100);
-    const darkColor = box.HasReleaseStatus ? GREEN_DARK : BLUE_DARK;
-    const lightColor = box.HasReleaseStatus ? GREEN_LIGHT : BLUE_LIGHT;
-    const cellBackground = `linear-gradient(90deg, ${darkColor} 0%, ${darkColor} ${percentage}%, ${lightColor} ${percentage}%, ${lightColor} 100%)`;
-
     const isHighlighted = box.IsSuggestedTarget || isRecentlyAssigned;
 
     return {
         ...baseCellStyle,
-        background: cellBackground,
+        background: box.HasReleaseStatus ? GREEN_LIGHT : BLUE_LIGHT,
         border: isRecentlyAssigned ? "3px solid #16833a" : "1px solid #8bbcff",
         padding: "0.25rem",
         outline: "none",

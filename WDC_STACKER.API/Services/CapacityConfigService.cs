@@ -52,14 +52,39 @@ namespace WDC_STACKER.API.Services
 
         public async Task ResetAsync(string? clientKey)
         {
-            var defaults = new CapacityConfig
-            {
-                RACK_COUNT = 3,
-                LAYER_COUNT = 4,
-                BOX_COUNT = 10,
-                TARGET_QTY = 7200,
-                TARGET_TRAY_COUNT = 30
-            };
+            var isFgi = string.Equals(
+                clientKey?.Trim(),
+                "WDC_STACKER.CLIENT.FGI",
+                StringComparison.OrdinalIgnoreCase);
+
+            var defaults = isFgi
+                ? new CapacityConfig
+                {
+                    RACK_COUNT = 650,
+                    LAYER_COUNT = 5,
+                    BOX_COUNT = 4,
+                    MAX_ITEM_PER_BOX = 10,
+
+                    LAYER_COUNT_SHIPBOX = 5,
+                    BOX_COUNT_SHIPBOX = 4,
+                    MAX_ITEM_PER_BOX_SHIPBOX = 10,
+
+                    ValidOperation = "302500 BRC OPERATION HOLD",
+                    FJ = 3,
+                    FD = 3,
+                    FS = 3,
+                    SJ = "M",
+                    SD = "M"
+                }
+                : new CapacityConfig
+                {
+                    RACK_COUNT = 3,
+                    LAYER_COUNT = 4,
+                    BOX_COUNT = 10,
+                    MAX_ITEM_PER_BOX = 10,
+                    TARGET_QTY = 7200,
+                    TARGET_TRAY_COUNT = 30
+                };
 
             await SaveAsync(defaults, clientKey);
         }

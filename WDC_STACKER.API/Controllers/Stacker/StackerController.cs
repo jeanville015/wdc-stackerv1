@@ -66,17 +66,24 @@ namespace WDC_STACKER.API.Controllers.Stacker
             if (string.IsNullOrWhiteSpace(request.BoxNo))
                 return BadRequest(new { message = "BoxNo is required." });
 
+            var clientKey = GetClientKey();
+            var isFgi = string.Equals(clientKey, "WDC_STACKER.CLIENT.FGI", StringComparison.OrdinalIgnoreCase);
+
+            if (isFgi && string.IsNullOrWhiteSpace(request.ShipBoxName))
+                return BadRequest(new { message = "ShipBoxName is required for FGI." });
+
             var token = GetBearerToken(Request);
 
             if (string.IsNullOrWhiteSpace(token))
                 return Unauthorized(new { message = "Bearer token is required." });
 
             _logger.LogInformation(
-                "Assign triggered for Holder={Holder}, BoxNo={BoxNo}",
+                "Assign triggered for Holder={Holder}, BoxNo={BoxNo}, ShipBoxName={ShipBoxName}",
                 request.Holder,
-                request.BoxNo);
+                request.BoxNo,
+                request.ShipBoxName);
 
-            var result = await _aggregate.AssignHolderAsync(request, token, GetClientKey());
+            var result = await _aggregate.AssignHolderAsync(request, token, clientKey);
 
             if (!result.Success &&
                 result.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
@@ -96,7 +103,43 @@ namespace WDC_STACKER.API.Controllers.Stacker
 
             return string.Empty;
         }
-         
+
+        [HttpGet("boxes/{boxNo}/shipboxes")]
+        public async Task<IActionResult> GetShipBoxes(string boxNo, [FromQuery] bool suggest = false)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            if (string.IsNullOrWhiteSpace(boxNo))
+                return BadRequest(new { message = "BoxNo is required." });
+
+            var shipBoxes = await _aggregate.GetShipBoxesAsync(boxNo.Trim(), suggest, GetClientKey());
+
+            return Ok(shipBoxes);
+        }
+
+        [HttpGet("boxes/{boxName}/shipboxes/{shipBoxName}/assignments")]
+        public async Task<IActionResult> GetShipBoxAssignments(string boxName, string shipBoxName)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            if (string.IsNullOrWhiteSpace(shipBoxName))
+                return BadRequest(new { message = "ShipBoxName is required." });
+
+            var assignments = await _aggregate.GetShipBoxAssignmentsAsync(boxName.Trim(), shipBoxName.Trim(),GetClientKey());
+
+            return Ok(assignments);
+        }
+
         [HttpGet("boxes/{boxName}/assignments")]
         public async Task<IActionResult> GetBoxAssignments(string boxName)
         {

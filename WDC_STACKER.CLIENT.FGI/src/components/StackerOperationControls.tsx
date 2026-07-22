@@ -1,39 +1,61 @@
 import { useState, type KeyboardEvent, type CSSProperties } from "react";
 import { scanApi, assignApi } from "../api/stackerApi";
 import { useAuth } from "../context/AuthContext";
-import type { BoxView } from "../types/stacker";
+import type { BoxView, ShipBoxView } from "../types/stacker";
 import { STACKER_PROCESS } from "../config/processConfig";
 
 interface StackerOperationControlsProps {
     onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
     selectedTargetBox: BoxView | null;
+    selectedTargetShipBox: ShipBoxView | null;
     onSelectedTargetBoxChanged: (box: BoxView | null) => void;
-    onBoxSelectionEnabledChanged: (enabled: boolean) => void;
+    onSelectedTargetShipBoxChanged: (shipBox: ShipBoxView | null) => void;
     onAssignedBoxConfirmed?: (boxNo: string) => void;
 }
+
 interface FeedbackState {
     message: string;
     type: "success" | "error" | "idle";
 }
 
+function findSuggestedTarget(boxes: BoxView[]) {
+    const suggestedBox = boxes.find((box) => box.IsSuggestedTarget);
+
+    if (!suggestedBox) {
+        return {
+            box: null,
+            shipBox: null,
+        };
+    }
+
+    const suggestedShipBox =
+        suggestedBox.ShipBoxes?.find((shipBox) => shipBox.IsSuggestedTarget) ?? null;
+
+    return {
+        box: suggestedBox,
+        shipBox: suggestedShipBox,
+    };
+}
+
 export default function StackerOperationControls({
     onGridViewBoxesLoaded,
     selectedTargetBox,
+    selectedTargetShipBox,
     onSelectedTargetBoxChanged,
-    onBoxSelectionEnabledChanged,
+    onSelectedTargetShipBoxChanged,
     onAssignedBoxConfirmed,
 }: StackerOperationControlsProps) {
-    const { user } = useAuth(); 
+    const { user } = useAuth();
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
-    const [assignLoading, setAssignLoading] = useState(false); 
+    const [assignLoading, setAssignLoading] = useState(false);
     const [feedback, setFeedback] = useState<FeedbackState>({
         message: "",
         type: "idle",
     });
     const [assignedBoxMessage, setAssignedBoxMessage] = useState("");
 
-    const canAssign = Boolean(selectedTargetBox);
+    const canAssign = Boolean(selectedTargetBox && selectedTargetShipBox);
 
     const showFeedback = (message: string, type: "success" | "error") => {
         setFeedback({ message, type });
@@ -45,7 +67,7 @@ export default function StackerOperationControls({
 
         if (!holder) return;
 
-        if (!user?.token) { 
+        if (!user?.token) {
             showFeedback("Login token is missing. Please sign in again.", "error");
             return;
         }
@@ -58,12 +80,28 @@ export default function StackerOperationControls({
             onGridViewBoxesLoaded?.(boxes);
 
             if (result.Success && result.CanAssign) {
-                onSelectedTargetBoxChanged(null);
-                onBoxSelectionEnabledChanged(true);
-                showFeedback("Validation Pass! Please select BOX for assignment.", "success");
+                const suggestedTarget = findSuggestedTarget(boxes);
+
+                if (!suggestedTarget.box) {
+                    onSelectedTargetBoxChanged(null);
+                    onSelectedTargetShipBoxChanged(null);
+                    showFeedback("No suggested Box was found.", "error");
+                    return;
+                }
+
+                if (!suggestedTarget.shipBox) {
+                    onSelectedTargetBoxChanged(null);
+                    onSelectedTargetShipBoxChanged(null);
+                    showFeedback("No suggested ShipBox was found.", "error");
+                    return;
+                }
+
+                onSelectedTargetBoxChanged(suggestedTarget.box);
+                onSelectedTargetShipBoxChanged(suggestedTarget.shipBox);
+                showFeedback("Validation Pass!", "success");
             } else {
                 onSelectedTargetBoxChanged(null);
-                onBoxSelectionEnabledChanged(false);
+                onSelectedTargetShipBoxChanged(null);
                 showFeedback(result.Message || "Validation failed.", "error");
             }
         } catch (err) {
@@ -82,7 +120,6 @@ export default function StackerOperationControls({
 
     const handleAssign = async () => {
         const holder = scanValue.trim();
-        
 
         if (!holder) {
             showFeedback("Holder is required.", "error");
@@ -94,12 +131,13 @@ export default function StackerOperationControls({
             return;
         }
 
-        if (!selectedTargetBox) {
-            showFeedback("Please select a box first.", "error");
+        if (!selectedTargetBox || !selectedTargetShipBox) {
+            showFeedback("Please validate first.", "error");
             return;
         }
 
         const assignedBoxNo = selectedTargetBox.BoxNo;
+        const assignedShipBoxName = selectedTargetShipBox.ShipBoxName;
 
         setAssignLoading(true);
 
@@ -111,6 +149,10 @@ export default function StackerOperationControls({
                     RackNum: selectedTargetBox.RackNum,
                     LayerRowNum: selectedTargetBox.LayerRowNum,
                     LayerColNum: selectedTargetBox.LayerColNum,
+                    ShipBoxName: selectedTargetShipBox.ShipBoxName,
+                    ShipBoxNum: selectedTargetShipBox.ShipBoxNum,
+                    ShipBoxLayerRowNum: selectedTargetShipBox.LayerRowNum,
+                    ShipBoxLayerColNum: selectedTargetShipBox.LayerColNum,
                     Process: STACKER_PROCESS,
                 },
                 user.token
@@ -128,10 +170,9 @@ export default function StackerOperationControls({
             if (result.Success) {
                 onAssignedBoxConfirmed?.(assignedBoxNo);
                 onSelectedTargetBoxChanged(null);
-                onBoxSelectionEnabledChanged(false);
-                setAssignedBoxMessage(`Holder was assigned to ${assignedBoxNo}`);
+                onSelectedTargetShipBoxChanged(null);
+                setAssignedBoxMessage(`Holder was assigned to ${assignedShipBoxName}`);
                 setScanValue("");
-                onSelectedTargetBoxChanged(null);;
             }
         } catch (err) {
             showFeedback(
@@ -177,8 +218,7 @@ export default function StackerOperationControls({
                 padding: "1rem 1rem",
                 gap: "1.5rem",
             }}
-        > 
-
+        >
             <div
                 style={{
                     background: "#f4f5f7",
@@ -210,7 +250,7 @@ export default function StackerOperationControls({
                     onChange={(e) => {
                         setScanValue(e.target.value);
                         onSelectedTargetBoxChanged(null);
-                        onBoxSelectionEnabledChanged(false);
+                        onSelectedTargetShipBoxChanged(null);
                         setAssignedBoxMessage("");
                     }}
                     onKeyDown={handleKeyDown}

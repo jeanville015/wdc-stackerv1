@@ -48,8 +48,12 @@ namespace WDC_STACKER.API.Controllers
             if (config.BOX_COUNT > 0) existing.BOX_COUNT = config.BOX_COUNT;
             if (config.TARGET_QTY > 0) existing.TARGET_QTY = config.TARGET_QTY;
             if (config.TARGET_TRAY_COUNT > 0) existing.TARGET_TRAY_COUNT = config.TARGET_TRAY_COUNT;
+            if (config.MAX_ITEM_PER_BOX > 0) existing.MAX_ITEM_PER_BOX = config.MAX_ITEM_PER_BOX;
+            if (config.LAYER_COUNT_SHIPBOX > 0) existing.LAYER_COUNT_SHIPBOX = config.LAYER_COUNT_SHIPBOX;
+            if (config.BOX_COUNT_SHIPBOX > 0) existing.BOX_COUNT_SHIPBOX = config.BOX_COUNT_SHIPBOX;
+            if (config.MAX_ITEM_PER_BOX_SHIPBOX > 0) existing.MAX_ITEM_PER_BOX_SHIPBOX = config.MAX_ITEM_PER_BOX_SHIPBOX;
 
-            await _service.SaveAsync(config, GetClientKey());
+            await _service.SaveAsync(existing, GetClientKey());
             return Ok(existing);
         }
 

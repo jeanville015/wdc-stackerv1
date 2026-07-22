@@ -1,22 +1,28 @@
 import { type CSSProperties } from "react";
 import RackPanel from "./RackPanel";
 import type { CapacityConfig } from "../../types/models";
-import type { BoxView } from "../../types/stacker";
+import type { BoxView, ShipBoxView } from "../../types/stacker";
 import { rackBoardStyle } from "./rackGridStyles";
 
 type RackBoardConfig = Pick<
     CapacityConfig,
-    "RACK_COUNT" | "LAYER_COUNT" | "BOX_COUNT" | "MAX_ITEM_PER_BOX"
+    | "RACK_COUNT"
+    | "LAYER_COUNT"
+    | "BOX_COUNT"
+    | "MAX_ITEM_PER_BOX"
+    | "LAYER_COUNT-SHIPBOX"
+    | "BOX_COUNT-SHIPBOX"
+    | "MAX_ITEM_PER_BOX-SHIPBOX"
 >;
 
 interface RackBoardProps {
     config: RackBoardConfig;
     boxes?: BoxView[];
-    onBoxesChanged: (boxes: BoxView[]) => void;
     boxSelectionEnabled: boolean;
     selectedTargetBox: BoxView | null;
+    selectedTargetShipBox: ShipBoxView | null;
     recentlyAssignedBoxNo?: string | null;
-    onTargetBoxSelected: (box: BoxView) => void;
+    onTargetShipBoxSelected: (box: BoxView, shipBox: ShipBoxView) => void;
 }
 
 const emptyStateStyle: CSSProperties = {
@@ -32,16 +38,19 @@ const emptyStateStyle: CSSProperties = {
 export default function RackBoard({
     config,
     boxes = [],
-    onBoxesChanged,
     boxSelectionEnabled,
     selectedTargetBox,
-    onTargetBoxSelected,
+    selectedTargetShipBox,
+    onTargetShipBoxSelected,
     recentlyAssignedBoxNo,
 }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
-    const boxCount = Math.max(0, config.BOX_COUNT);
-    const maxItemPerBox = Math.max(0, config.MAX_ITEM_PER_BOX);
+    const boxCount = Math.max(0, config.BOX_COUNT); 
+
+    const shipBoxLayerCount = Math.max(0, config["LAYER_COUNT-SHIPBOX"]);
+    const shipBoxBoxCount = Math.max(0, config["BOX_COUNT-SHIPBOX"]);
+    const maxItemPerShipBox = Math.max(0, config["MAX_ITEM_PER_BOX-SHIPBOX"]);
 
     if (rackCount === 0) {
         return <div style={emptyStateStyle}>No racks configured.</div>;
@@ -59,13 +68,15 @@ export default function RackBoard({
                         recentlyAssignedBoxNo={recentlyAssignedBoxNo}
                         rackNumber={rackNumber}
                         layerCount={layerCount}
-                        boxCount={boxCount}
-                        maxItemPerBox={maxItemPerBox}
+                        boxCount={boxCount} 
+                        shipBoxLayerCount={shipBoxLayerCount}
+                        shipBoxBoxCount={shipBoxBoxCount}
+                        maxItemPerShipBox={maxItemPerShipBox}
                         boxes={rackBoxes}
-                        onBoxesChanged={onBoxesChanged}
                         boxSelectionEnabled={boxSelectionEnabled}
                         selectedTargetBox={selectedTargetBox}
-                        onTargetBoxSelected={onTargetBoxSelected}
+                        selectedTargetShipBox={selectedTargetShipBox}
+                        onTargetShipBoxSelected={onTargetShipBoxSelected}
                     />
                 );
             })}

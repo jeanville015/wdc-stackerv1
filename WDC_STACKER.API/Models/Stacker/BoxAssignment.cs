@@ -7,6 +7,8 @@ public class BoxAssignment
     public string Factory { get; set; } = string.Empty;
     public string Lec { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string Partnum { get; set; } = string.Empty;
+    public string Pennum { get; set; } = string.Empty;
 }
 
 public class DisassociateHolderRequest

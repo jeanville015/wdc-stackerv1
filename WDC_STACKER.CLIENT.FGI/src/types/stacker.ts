@@ -1,16 +1,28 @@
 // ── Stacker operation types ───────────────────────────────────────────────────
 
-/** Response from POST /api/stacker/scan */
 export interface ScanResponse {
     Success: boolean;
     CanAssign: boolean;
     Message: string;
     Holder: string;
-    HolderJob: Record<string, string>; 
+    HolderJob: Record<string, string>;
     RawQueryResult: FeatsQueryResponse | null;
     GridViewBoxes: BoxView[];
-
 }
+
+export interface ShipBoxView {
+    IsSuggestedTarget?: boolean;
+    BoxNo: string;
+    ShipBoxName: string;
+    ShipBoxStatus: string;
+    ShipBoxNum: number;
+    LayerRowNum: number;
+    LayerColNum: number;
+    ShipBoxListCount: number;
+    ShipBoxListPercentage: number;
+    HasReleaseStatus: boolean;
+}
+
 export interface BoxView {
     BoxNo: string;
     RackNum: number;
@@ -20,19 +32,22 @@ export interface BoxView {
     BoxListPercentage: number;
     IsSuggestedTarget?: boolean;
     HasReleaseStatus: boolean;
+    ShipBoxes?: ShipBoxView[];
 }
-/** ---------------------------------- */
 
-
-/** Response from POST /api/stacker/assign */
 export interface AssignRequest {
     Holder: string;
     BoxNo: string;
     RackNum: number;
     LayerRowNum: number;
     LayerColNum: number;
+    ShipBoxName?: string;
+    ShipBoxNum?: number;
+    ShipBoxLayerRowNum?: number;
+    ShipBoxLayerColNum?: number;
     Process: string;
 }
+
 export interface AssignResponse {
     Success: boolean;
     Message: string;
@@ -63,6 +78,8 @@ export interface BoxAssignment {
     ProductName: string;
     Factory: string;
     Lec: string;
+    Partnum: string;
+    Pennum: string;
     Status: string;
 }
 

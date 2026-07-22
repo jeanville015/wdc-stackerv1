@@ -6,4 +6,9 @@ export interface CapacityConfig {
     TARGET_QTY: number;
     TARGET_TRAY_COUNT: number;
     ValidOperation: string;
+    FJ: number;
+    FD: number;
+    FS: number;
+    SJ: string;
+    SD: string;
 }

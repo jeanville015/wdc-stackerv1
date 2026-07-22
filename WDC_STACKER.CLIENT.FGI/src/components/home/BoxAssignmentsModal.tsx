@@ -1,28 +1,23 @@
 import { useEffect, useState } from "react";
-import {
-    disassociateHolderApi,
-    getBoxAssignmentsApi,
-} from "../../api/stackerApi";
+import { getShipBoxAssignmentsApi } from "../../api/stackerApi";
 import { useAuth } from "../../context/AuthContext";
-import type { BoxAssignment, BoxView } from "../../types/stacker";
+import type { BoxAssignment } from "../../types/stacker";
 
 interface Props {
     boxName: string;
+    shipBoxName: string;
     onClose: () => void;
-    onBoxesChanged: (boxes: BoxView[]) => void;
 }
 
 export default function BoxAssignmentsModal({
     boxName,
+    shipBoxName,
     onClose,
-    onBoxesChanged,
 }: Props) {
     const { user } = useAuth();
     const [rows, setRows] = useState<BoxAssignment[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [confirmRow, setConfirmRow] = useState<BoxAssignment | null>(null);
-    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         if (!user?.token) {
@@ -31,47 +26,21 @@ export default function BoxAssignmentsModal({
             return;
         }
 
-        getBoxAssignmentsApi(boxName, user.token)
+        setLoading(true);
+        getShipBoxAssignmentsApi(boxName, shipBoxName, user.token)
             .then(setRows)
             .catch((err: unknown) =>
                 setError(err instanceof Error ? err.message : "Load failed.")
             )
             .finally(() => setLoading(false));
-    }, [boxName, user?.token]);
-
-    const disassociate = async () => {
-        if (!confirmRow || !user?.token) return;
-
-        setDeleting(true);
-        setError("");
-
-        try {
-            const result = await disassociateHolderApi(
-                confirmRow.Holder,
-                user.token
-            );
-
-            setRows((current) =>
-                current.filter((row) => row.Holder !== confirmRow.Holder)
-            );
-            onBoxesChanged(result.GridViewBoxes);
-            setConfirmRow(null);
-        } catch (err) {
-            setError(
-                err instanceof Error ? err.message : "Disassociate failed."
-            );
-        } finally {
-            setDeleting(false);
-        }
-    };
+    }, [shipBoxName, user?.token]);
 
     return (
-    <>
         <div
             className="modal d-block"
             role="dialog"
             aria-modal="true"
-            style={{ background: "rgba(9, 30, 66, 0.55)" }}
+            style={{ background: "rgba(9, 30, 66, 0.55)", zIndex: 1060 }}
             onMouseDown={onClose}
         >
             <div
@@ -81,7 +50,7 @@ export default function BoxAssignmentsModal({
                 <div className="modal-content">
                     <div className="modal-header">
                         <h5 className="modal-title">
-                            Box Assignments: {boxName}
+                            Holder Assignments: {shipBoxName}
                         </h5>
                         <button
                             type="button"
@@ -92,9 +61,7 @@ export default function BoxAssignmentsModal({
                     </div>
 
                     <div className="modal-body">
-                        {error && (
-                            <div className="alert alert-danger">{error}</div>
-                        )}
+                        {error && <div className="alert alert-danger">{error}</div>}
 
                         {loading ? (
                             <div className="text-center p-4">
@@ -109,42 +76,28 @@ export default function BoxAssignmentsModal({
                                             <th>Product Name</th>
                                             <th>Factory</th>
                                             <th>LEC</th>
+                                            <th>Partnum</th>
+                                            <th>Pennum</th>
                                             <th>Status</th>
-                                            <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {rows.map((row) => {
-                                            const canDisassociate =
-                                                row.Status.trim().toUpperCase() ===
-                                                "RELEASE";
-
-                                            return (
-                                                <tr key={row.Holder}>
-                                                    <td>{row.Holder}</td>
-                                                    <td>{row.ProductName}</td>
-                                                    <td>{row.Factory}</td>
-                                                    <td>{row.Lec}</td>
-                                                    <td>{row.Status}</td>
-                                                    <td>
-                                                        <button
-                                                            className="btn btn-sm btn-danger"
-                                                            disabled={!canDisassociate}
-                                                            onClick={() =>
-                                                                setConfirmRow(row)
-                                                            }
-                                                        >
-                                                            Disassociate
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
+                                        {rows.map((row) => (
+                                            <tr key={row.Holder}>
+                                                <td>{row.Holder}</td>
+                                                <td>{row.ProductName}</td>
+                                                <td>{row.Factory}</td>
+                                                <td>{row.Lec}</td>
+                                                <td>{row.Partnum}</td>
+                                                <td>{row.Pennum}</td>
+                                                <td>{row.Status}</td>
+                                            </tr>
+                                        ))}
 
                                         {rows.length === 0 && (
                                             <tr>
                                                 <td
-                                                    colSpan={6}
+                                                    colSpan={7}
                                                     className="text-center text-muted p-4"
                                                 >
                                                     No assignments found.
@@ -153,57 +106,6 @@ export default function BoxAssignmentsModal({
                                         )}
                                     </tbody>
                                 </table>
-                            </div>
-                        )}
-
-                        {confirmRow && (
-                            <div
-                                className="modal d-block"
-                                role="dialog"
-                                aria-modal="true"
-                                style={{ background: "rgba(9, 30, 66, 0.55)", zIndex: 1060 }}
-                                onMouseDown={() => {
-                                    if (!deleting) setConfirmRow(null);
-                                }}
-                            >
-                                <div
-                                    className="modal-dialog modal-dialog-centered"
-                                    onMouseDown={(event) => event.stopPropagation()}
-                                >
-                                    <div className="modal-content">
-                                        <div className="modal-header">
-                                            <h5 className="modal-title">Confirm Disassociate?</h5>
-                                        </div>
-
-                                        <div className="modal-body">
-                                            <p className="mb-2">
-                                                Are you sure you want to disassociate the Holder{" "}
-                                                <strong>{confirmRow.Holder}</strong> from{" "}
-                                                <strong>{boxName}</strong>?
-                                            </p>
-                                            <p className="mb-0 text-danger">
-                                                This action cannot be undone.
-                                            </p>
-                                        </div>
-
-                                        <div className="modal-footer">
-                                            <button
-                                                className="btn btn-secondary"
-                                                disabled={deleting}
-                                                onClick={() => setConfirmRow(null)}
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                className="btn btn-danger"
-                                                disabled={deleting}
-                                                onClick={disassociate}
-                                            >
-                                                {deleting ? "Processing..." : "Disassociate"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         )}
                     </div>
@@ -216,6 +118,5 @@ export default function BoxAssignmentsModal({
                 </div>
             </div>
         </div>
-    </>
-);
+    );
 }

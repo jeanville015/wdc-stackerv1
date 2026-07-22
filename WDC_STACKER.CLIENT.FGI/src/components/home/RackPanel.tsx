@@ -1,12 +1,11 @@
 import { Fragment, useState, type CSSProperties } from "react";
-import BoxAssignmentsModal from "./BoxAssignmentsModal";
-import type { BoxView } from "../../types/stacker";
+import ShipBoxGridModal from "./ShipBoxGridModal";
+import type { BoxView, ShipBoxView } from "../../types/stacker";
 import {
     columnLabelCellStyle,
     cornerCellStyle,
     getBoxHighlightColor,
     getCornerHighlightStyle,
-    getMappedCellStyle,
     getEmptyCellStyle,
     rackCardStyle,
     rackGridStyle,
@@ -20,13 +19,15 @@ interface RackPanelProps {
     recentlyAssignedBoxNo?: string | null;
     rackNumber: number;
     layerCount: number;
-    boxCount: number;
-    maxItemPerBox: number;
+    boxCount: number; 
+    shipBoxLayerCount: number;
+    shipBoxBoxCount: number;
+    maxItemPerShipBox: number;
     boxes?: BoxView[];
-    onBoxesChanged: (boxes: BoxView[]) => void;
     boxSelectionEnabled: boolean;
     selectedTargetBox: BoxView | null;
-    onTargetBoxSelected: (box: BoxView) => void;
+    selectedTargetShipBox: ShipBoxView | null;
+    onTargetShipBoxSelected: (box: BoxView, shipBox: ShipBoxView) => void;
 }
 
 const emptyGridStyle: CSSProperties = {
@@ -38,21 +39,109 @@ const emptyGridStyle: CSSProperties = {
     fontSize: "0.84rem",
 };
 
+const MINI_SHIPBOX_LAYER_COUNT = 3;
+
+const miniShipBoxGridStyle = (shipBoxBoxCount: number): CSSProperties => ({
+    display: "grid",
+    gridTemplateColumns: `repeat(${Math.max(1, shipBoxBoxCount)}, minmax(0, 1fr))`,
+    gridTemplateRows: `repeat(${MINI_SHIPBOX_LAYER_COUNT}, minmax(0, 1fr))`,
+    gap: "3px",
+    width: "82%",
+    maxWidth: "58px",
+    pointerEvents: "none",
+});
+
+const miniShipBoxCellStyle = (isSuggested?: boolean): CSSProperties => ({
+    aspectRatio: "1 / 1",
+    borderRadius: "2px",
+    background: isSuggested ? "#003d99" : "#4c9aff",
+    border: isSuggested ? "1px solid #001f5c" : "1px solid #8bbcff",
+});
+
+const miniShipBoxEmptyCellStyle: CSSProperties = {
+    aspectRatio: "1 / 1",
+    borderRadius: "2px",
+    background: "#d8dde6",
+    border: "1px solid #c1c7d0",
+};
+
+function MiniShipBoxGrid({
+    box,
+    shipBoxBoxCount,
+}: {
+    box: BoxView;
+    shipBoxBoxCount: number;
+}) {
+    const shipBoxes = box.ShipBoxes ?? [];
+    const columnCount = Math.max(1, shipBoxBoxCount);
+    const totalSlots = MINI_SHIPBOX_LAYER_COUNT * columnCount;
+    const shouldCollapse = totalSlots > 15;
+    const visibleSlotCount = shouldCollapse ? 13 : totalSlots;
+
+    const findShipBox = (layerNumber: number, columnNumber: number) => {
+        return shipBoxes.find(
+            (shipBox) =>
+                shipBox.LayerRowNum === layerNumber &&
+                shipBox.LayerColNum === columnNumber
+        );
+    };
+
+    return (
+        <div style={miniShipBoxGridStyle(columnCount)}>
+            {Array.from({ length: visibleSlotCount }, (_, index) => {
+                const layerNumber = Math.floor(index / columnCount) + 1;
+                const columnNumber = (index % columnCount) + 1;
+                const shipBox = findShipBox(layerNumber, columnNumber);
+
+                return (
+                    <span
+                        key={
+                            shipBox?.ShipBoxName ??
+                            `empty-shipbox-slot-${box.BoxNo}-${layerNumber}-${columnNumber}`
+                        }
+                        style={
+                            shipBox
+                                ? miniShipBoxCellStyle(shipBox.IsSuggestedTarget)
+                                : miniShipBoxEmptyCellStyle
+                        }
+                    />
+                );
+            })}
+
+            {shouldCollapse && (
+                <span
+                    style={{
+                        color: "#003d99",
+                        fontSize: "0.72rem",
+                        fontWeight: 800,
+                        lineHeight: 1,
+                        gridColumn: "span 2",
+                    }}
+                >
+                    ...
+                </span>
+            )}
+        </div>
+    );
+}
+
 export default function RackPanel({
     recentlyAssignedBoxNo,
     rackNumber,
     layerCount,
-    boxCount,
-    maxItemPerBox,
+    boxCount, 
+    shipBoxLayerCount,
+    shipBoxBoxCount,
+    maxItemPerShipBox,
     boxes = [],
-    onBoxesChanged,
     boxSelectionEnabled,
     selectedTargetBox,
-    onTargetBoxSelected,
+    selectedTargetShipBox,
+    onTargetShipBoxSelected,
 }: RackPanelProps) {
-    const [selectedBoxName, setSelectedBoxName] = useState<string | null>(null);
+    const [selectedBox, setSelectedBox] = useState<BoxView | null>(null);
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
-    const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1); 
+    const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1);
 
     const findBox = (layerNumber: number, columnNumber: number) => {
         return boxes.find(
@@ -105,12 +194,6 @@ export default function RackPanel({
                             {columns.map((columnNumber) => {
                                 const box = findBox(layerNumber, columnNumber);
                                 const isSelectedTarget = selectedTargetBox?.BoxNo === box?.BoxNo;
-                                const percentage = box
-                                    ? Math.min(Math.max(Number(box.BoxListPercentage), 0), 100)
-                                    : 0;
-                                const label = box
-                                    ? `${box.BoxNo} (${box.BoxListCount}/${maxItemPerBox})`
-                                    : "";
                                 const isRecentlyAssigned = recentlyAssignedBoxNo === box?.BoxNo;
 
                                 return (
@@ -120,23 +203,32 @@ export default function RackPanel({
                                         disabled={!box}
                                         onClick={() => {
                                             if (!box) return;
-
-                                            if (boxSelectionEnabled) {
-                                                onTargetBoxSelected(box);
-                                                return;
-                                            }
-
-                                            setSelectedBoxName(box.BoxNo);
+                                            setSelectedBox(box);
                                         }}
                                         style={{
-                                            ...(box ? getMappedCellStyle(box, isSelectedTarget, isRecentlyAssigned) : getEmptyCellStyle()),
+                                            ...(box
+                                                ? {
+                                                    ...getEmptyCellStyle(),
+                                                    background: "#eaf3ff",
+                                                    border: isRecentlyAssigned ? "3px solid #16833a" : "1px solid #8bbcff",
+                                                    padding: "0.25rem",
+                                                    outline: "none",
+                                                    outlineOffset: "0",
+                                                    overflow: isSelectedTarget || isRecentlyAssigned ? "visible" : "hidden",
+                                                    boxShadow: isRecentlyAssigned
+                                                        ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 12px rgba(22,131,58,0.35)"
+                                                        : isSelectedTarget
+                                                            ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 10px rgba(0,82,204,0.35)"
+                                                            : "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
+                                                }
+                                                : getEmptyCellStyle()),
                                             position: "relative",
                                             cursor: box ? "pointer" : "default",
                                         }}
                                         aria-label={
                                             box
-                                                ? `Open assignments for ${box.BoxNo}`
-                                                : `Empty rack cell`
+                                                ? `Open ShipBoxes for ${box.BoxNo}`
+                                                : "Empty rack cell"
                                         }
                                     >
                                         {box && (
@@ -149,38 +241,13 @@ export default function RackPanel({
                                                         alignItems: "center",
                                                         justifyContent: "center",
                                                         padding: "0.25rem",
-                                                        color: "#003d99",
-                                                        fontSize: "0.68rem",
-                                                        fontWeight: 700,
-                                                        lineHeight: 1.15,
-                                                        textAlign: "center",
-                                                        overflowWrap: "anywhere",
                                                         pointerEvents: "none",
                                                     }}
                                                 >
-                                                    {label}
-                                                </span>
-
-                                                <span
-                                                    style={{
-                                                        position: "absolute",
-                                                        inset: 0,
-                                                        display: "flex",
-                                                        alignItems: "center",
-                                                        justifyContent: "center",
-                                                        padding: "0.25rem",
-                                                        color: "#ffffff",
-                                                        fontSize: "0.68rem",
-                                                        fontWeight: 700,
-                                                        lineHeight: 1.15,
-                                                        textAlign: "center",
-                                                        overflowWrap: "anywhere",
-                                                        pointerEvents: "none",
-                                                        clipPath: `inset(0 ${100 - percentage}% 0 0)`,
-                                                        textShadow: "0 1px 2px rgba(0,0,0,0.35)",
-                                                    }}
-                                                >
-                                                    {label}
+                                                    <MiniShipBoxGrid
+                                                        box={box}
+                                                        shipBoxBoxCount={shipBoxBoxCount}
+                                                    />
                                                 </span>
 
                                                 {isSelectedTarget && (
@@ -191,52 +258,27 @@ export default function RackPanel({
                                                         <span style={getCornerHighlightStyle("bottomRight", getBoxHighlightColor(box))} />
                                                     </>
                                                 )}
+
                                                 {isRecentlyAssigned && (
-                                                    <>
-                                                        <span
-                                                            style={{
-                                                                position: "absolute",
-                                                                top: "-10px",
-                                                                right: "-10px",
-                                                                width: "26px",
-                                                                height: "26px",
-                                                                borderRadius: "50%",
-                                                                background: "#16833a",
-                                                                border: "3px solid #ffffff",
-                                                                color: "#ffffff",
-                                                                display: "flex",
-                                                                alignItems: "center",
-                                                                justifyContent: "center",
-                                                                fontSize: "0.82rem",
-                                                                fontWeight: 800,
-                                                                zIndex: 7,
-                                                                pointerEvents: "none",
-                                                            }}
-                                                        >
-                                                            ✓
-                                                        </span>
-
-                                                        <span
-                                                            style={{
-                                                                position: "absolute",
-                                                                left: "0.35rem",
-                                                                bottom: "0.3rem",
-                                                                background: "#d8f3df",
-                                                                border: "1px solid #16833a",
-                                                                borderRadius: "6px",
-                                                                color: "#0f6b2e",
-                                                                fontSize: "0.62rem",
-                                                                fontWeight: 800,
-                                                                padding: "0.08rem 0.35rem",
-                                                                zIndex: 7,
-                                                                pointerEvents: "none",
-                                                            }}
-                                                        >
-                                                            Assigned
-                                                        </span>
-                                                    </>
+                                                    <span
+                                                        style={{
+                                                            position: "absolute",
+                                                            left: "0.35rem",
+                                                            bottom: "0.3rem",
+                                                            background: "#d8f3df",
+                                                            border: "1px solid #16833a",
+                                                            borderRadius: "6px",
+                                                            color: "#0f6b2e",
+                                                            fontSize: "0.62rem",
+                                                            fontWeight: 800,
+                                                            padding: "0.08rem 0.35rem",
+                                                            zIndex: 7,
+                                                            pointerEvents: "none",
+                                                        }}
+                                                    >
+                                                        Assigned
+                                                    </span>
                                                 )}
-
                                             </>
                                         )}
                                     </button>
@@ -246,11 +288,17 @@ export default function RackPanel({
                     ))}
                 </div>
             </div>
-            {selectedBoxName && (
-                <BoxAssignmentsModal
-                    boxName={selectedBoxName}
-                    onClose={() => setSelectedBoxName(null)}
-                    onBoxesChanged={onBoxesChanged}
+
+            {selectedBox && (
+                <ShipBoxGridModal
+                    box={selectedBox}
+                    layerCount={shipBoxLayerCount}
+                    boxCount={shipBoxBoxCount}
+                    maxItemPerShipBox={maxItemPerShipBox}
+                    shipBoxSelectionEnabled={boxSelectionEnabled}
+                    selectedTargetShipBox={selectedTargetShipBox}
+                    onTargetShipBoxSelected={onTargetShipBoxSelected}
+                    onClose={() => setSelectedBox(null)}
                 />
             )}
         </article>

@@ -1,5 +1,5 @@
 import { API_BASE } from "../config/apiConfig";
-import type { ScanResponse, AssignRequest, AssignResponse, BoxAssignment, DisassociateResponse, } from "../types/stacker";
+import type { ScanResponse, AssignRequest, AssignResponse, BoxAssignment, DisassociateResponse, ShipBoxView } from "../types/stacker";
 import { STACKER_CLIENT, STACKER_CLIENT_HEADER } from "../config/processConfig";
 
 const CLIENT_HEADERS: Record<string, string> = {
@@ -77,6 +77,52 @@ export async function getBoxAssignmentsApi(boxName: string, token: string): Prom
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(getErrorMessage(err, "Unable to load box assignments."));
+    }
+
+    return response.json() as Promise<BoxAssignment[]>;
+}
+
+export async function getShipBoxesApi(
+    boxNo: string,
+    token: string,
+    suggest = false
+): Promise<ShipBoxView[]> {
+    const response = await fetch(
+        `${API_BASE}/api/stacker/boxes/${encodeURIComponent(boxNo)}/shipboxes?suggest=${suggest}`,
+        {
+            headers: {
+                ...CLIENT_HEADERS,
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(err, "Unable to load ShipBoxes."));
+    }
+
+    return response.json() as Promise<ShipBoxView[]>;
+}
+
+export async function getShipBoxAssignmentsApi(
+    boxName: string,
+    shipBoxName: string,
+    token: string
+): Promise<BoxAssignment[]> {
+    const response = await fetch(
+        `${API_BASE}/api/stacker/boxes/${encodeURIComponent(boxName)}/shipboxes/${encodeURIComponent(shipBoxName)}/assignments`,
+        {
+            headers: {
+                ...CLIENT_HEADERS,
+                Authorization: `Bearer ${token}`,
+            },
+        }
+    );
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(getErrorMessage(err, "Unable to load ShipBox assignments."));
     }
 
     return response.json() as Promise<BoxAssignment[]>;
