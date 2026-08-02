@@ -213,5 +213,40 @@ namespace WDC_STACKER.API.Services
             }
         }
 
+        /// <summary>
+        /// The ! operators only suppress nullable-reference warnings.
+        /// The actual runtime values remain null. The WSDL marks HolderType
+        /// with minOccurs="0", although the FEATS server may still apply its own business validation.
+        /// </summary>
+        /// <param name="holder"></param>
+        /// <param name="holderType"></param>
+        /// <param name="holdReasonCode"></param>
+        /// <param name="comment"></param>
+        /// <param name="username"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public async Task<(bool Success, string Message)> HoldHolderAsync(string holder, string? holderType, string holdReasonCode, string comment, string username, string password)
+        {
+            _logger.LogInformation("FEATS HoldHolder -> holder={Holder}, holdReasonCode={HoldReasonCode}", holder, holdReasonCode);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password);
+                await client.HoldHolderAsync(holder, holderType!, holdReasonCode, comment);
+                return (true, "FEATS HoldHolder completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS HoldHolder failed for holder={Holder}", holder);
+                return (false, $"FEATS HoldHolder failed: {ex.Message}");
+            }
+        }
+
     }
 }

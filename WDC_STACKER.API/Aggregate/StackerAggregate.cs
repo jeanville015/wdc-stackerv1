@@ -47,7 +47,9 @@ namespace WDC_STACKER.API.Aggregate
                 employeeName.Contains(username, StringComparison.OrdinalIgnoreCase));
         }
 
-        public async Task<GridViewBoxMapResult> MapGridViewBoxData(string? clientKey)
+        public async Task<GridViewBoxMapResult> MapGridViewBoxData(
+            string? clientKey,
+            HolderAssignInsertData? holderData = null)
         {
             var config = await _capacityConfigService.GetAsync(clientKey);
             var process = ResolveProcess(clientKey);
@@ -78,21 +80,74 @@ namespace WDC_STACKER.API.Aggregate
                 }
             }
 
-            var suggested = SelectSuggestedBox(boxes);
-
-            if (suggested is not null)
+            if (isFgi)
             {
-                suggested.IsSuggestedTarget = true;
-
-                if (isFgi && !EnsureSuggestedShipBox(suggested, config))
+                if (holderData is null)
                 {
                     return new GridViewBoxMapResult
                     {
                         Boxes = boxes,
                         HasSuggestedTarget = false,
-                        Message = "No suggested target ShipBox was found."
+                        Message = "FGI holder metadata is required to calculate a target."
                     };
                 }
+
+                if (string.IsNullOrWhiteSpace(holderData.PartNum) ||
+                    string.IsNullOrWhiteSpace(holderData.ProductName))
+                {
+                    return new GridViewBoxMapResult
+                    {
+                        Boxes = boxes,
+                        HasSuggestedTarget = false,
+                        Message = "PartNum and ProductName are required for FGI targeting."
+                    };
+                }
+
+                var existingTarget = TrySelectSuggestedFgiTarget(
+                    boxes,
+                    config,
+                    holderData);
+
+                if (existingTarget is not null)
+                {
+                    return new GridViewBoxMapResult
+                    {
+                        Boxes = boxes,
+                        HasSuggestedTarget = true,
+                        Message = "Grid view box data mapped successfully."
+                    };
+                }
+
+                var newBox = TryCreateNextFgiBox(
+                    boxes,
+                    config,
+                    holderData);
+
+                if (newBox is null)
+                {
+                    return new GridViewBoxMapResult
+                    {
+                        Boxes = boxes,
+                        HasSuggestedTarget = false,
+                        Message = "No compatible FGI target is available and all settings are maxed out."
+                    };
+                }
+
+                boxes.Add(newBox);
+
+                return new GridViewBoxMapResult
+                {
+                    Boxes = boxes,
+                    HasSuggestedTarget = true,
+                    Message = "Grid view box data mapped successfully."
+                };
+            }
+
+            var suggested = SelectSuggestedBox(boxes);
+
+            if (suggested is not null)
+            {
+                suggested.IsSuggestedTarget = true;
 
                 return new GridViewBoxMapResult
                 {
@@ -160,11 +215,6 @@ namespace WDC_STACKER.API.Aggregate
                     HasReleaseStatus = false
                 };
 
-                if (isFgi)
-                {
-                    EnsureSuggestedShipBox(newBox, config);
-                }
-
                 boxes.Add(newBox);
 
                 return new GridViewBoxMapResult
@@ -200,17 +250,111 @@ namespace WDC_STACKER.API.Aggregate
                 .FirstOrDefault();
         }
 
-        private static bool EnsureSuggestedShipBox(BoxView box, CapacityConfig config)
+        private static string? NormalizeOptional(string? value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? null
+                : value.Trim();
+        }
+
+        private static bool SameRequiredIdentity(
+            string? left,
+            string? right)
+        {
+            var normalizedLeft = NormalizeOptional(left);
+            var normalizedRight = NormalizeOptional(right);
+
+            return normalizedLeft is not null &&
+                   normalizedRight is not null &&
+                   string.Equals(
+                       normalizedLeft,
+                       normalizedRight,
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool SameNullableIdentity(
+            string? left,
+            string? right)
+        {
+            var normalizedLeft = NormalizeOptional(left);
+            var normalizedRight = NormalizeOptional(right);
+
+            if (normalizedLeft is null ||
+                normalizedRight is null)
+            {
+                return normalizedLeft is null &&
+                       normalizedRight is null;
+            }
+
+            return string.Equals(
+                normalizedLeft,
+                normalizedRight,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsCompatibleFgiBox(
+            BoxView box,
+            HolderAssignInsertData holderData)
+        {
+            return box.BoxListPercentage < 100 &&
+                   SameRequiredIdentity(
+                       box.PartNum,
+                       holderData.PartNum) &&
+                   SameNullableIdentity(
+                       box.PenNum,
+                       holderData.PenNum) &&
+                   SameRequiredIdentity(
+                       box.ProductName,
+                       holderData.ProductName);
+        }
+
+        private static BoxView? TrySelectSuggestedFgiTarget(
+            List<BoxView> boxes,
+            CapacityConfig config,
+            HolderAssignInsertData holderData)
+        {
+            var compatibleBoxes = boxes
+                .Where(box => IsCompatibleFgiBox(box, holderData))
+                .OrderBy(box => box.BoxListPercentage)
+                .ThenBy(box => box.RackNum)
+                .ThenBy(box => box.LayerRowNum)
+                .ThenBy(box => box.LayerColNum);
+
+            foreach (var box in compatibleBoxes)
+            {
+                if (!TryEnsureSuggestedFgiShipBox(
+                        box,
+                        config,
+                        holderData.Lec))
+                {
+                    continue;
+                }
+
+                box.IsSuggestedTarget = true;
+                return box;
+            }
+
+            return null;
+        }
+
+        private static bool TryEnsureSuggestedFgiShipBox(
+            BoxView box,
+            CapacityConfig config,
+            string? targetLec)
         {
             foreach (var shipBox in box.ShipBoxes)
             {
                 shipBox.IsSuggestedTarget = false;
             }
 
-            if (box.ShipBoxes.Any(x => x.ShipBoxListPercentage < 100))
+            var normalizedLec = NormalizeOptional(targetLec);
+
+            if (normalizedLec is not null)
             {
                 var suggested = box.ShipBoxes
-                    .Where(x => x.ShipBoxListPercentage < 100)
+                    .Where(x =>
+                        x.ShipBoxListPercentage < 100 &&
+                        SameRequiredIdentity(x.Lec, normalizedLec))
                     .OrderBy(x => x.ShipBoxListPercentage)
                     .ThenBy(x => x.ShipBoxNum)
                     .ThenBy(x => x.LayerRowNum)
@@ -222,6 +366,28 @@ namespace WDC_STACKER.API.Aggregate
                     suggested.IsSuggestedTarget = true;
                     return true;
                 }
+            }
+
+            // A missing LEC always requires a new ShipBox. A non-null LEC
+            // reaches this point only when no compatible ShipBox exists.
+            return TryAddSuggestedFgiShipBox(
+                box,
+                config,
+                normalizedLec);
+        }
+
+        private static bool TryAddSuggestedFgiShipBox(
+            BoxView box,
+            CapacityConfig config,
+            string? normalizedLec)
+        {
+            if (config.MAX_ITEM_PER_BOX <= 0 ||
+                box.ShipBoxes.Count >= config.MAX_ITEM_PER_BOX ||
+                config.MAX_ITEM_PER_BOX_SHIPBOX <= 0 ||
+                config.LAYER_COUNT_SHIPBOX <= 0 ||
+                config.BOX_COUNT_SHIPBOX <= 0)
+            {
+                return false;
             }
 
             var lastShipBox = box.ShipBoxes
@@ -236,7 +402,7 @@ namespace WDC_STACKER.API.Aggregate
 
             if (lastShipBox is not null)
             {
-                newShipBoxNum = lastShipBox.ShipBoxNum + 1;
+                newShipBoxNum = lastShipBox.ShipBoxNum;
                 newLayerRowNum = lastShipBox.LayerRowNum;
                 newLayerColNum = lastShipBox.LayerColNum;
 
@@ -258,18 +424,96 @@ namespace WDC_STACKER.API.Aggregate
             box.ShipBoxes.Add(new ShipBoxView
             {
                 BoxNo = box.BoxNo,
-                ShipBoxName = $"{box.BoxNo}-S{newShipBoxNum:00}",
-                ShipBoxStatus = "RELEASE",
+                ShipBoxName =
+                    $"S{newShipBoxNum:00}L{newLayerRowNum:00}C{newLayerColNum:00}",
+                ShipBoxStatus = string.Empty,
                 ShipBoxNum = newShipBoxNum,
                 LayerRowNum = newLayerRowNum,
                 LayerColNum = newLayerColNum,
                 ShipBoxListCount = 0,
                 ShipBoxListPercentage = 0,
                 IsSuggestedTarget = true,
-                HasReleaseStatus = true
+                HasReleaseStatus = true,
+                Lec = normalizedLec ?? string.Empty
             });
 
             return true;
+        }
+
+        private static BoxView? TryCreateNextFgiBox(
+            List<BoxView> boxes,
+            CapacityConfig config,
+            HolderAssignInsertData holderData)
+        {
+            if (config.RACK_COUNT <= 0 ||
+                config.LAYER_COUNT <= 0 ||
+                config.BOX_COUNT <= 0)
+            {
+                return null;
+            }
+
+            var lastBox = boxes
+                .OrderByDescending(x => x.RackNum)
+                .ThenByDescending(x => x.LayerRowNum)
+                .ThenByDescending(x => x.LayerColNum)
+                .FirstOrDefault();
+
+            var newRackNum = 1;
+            var newLayerRowNum = 1;
+            var newLayerColNum = 1;
+
+            if (lastBox is not null)
+            {
+                newRackNum = lastBox.RackNum;
+                newLayerRowNum = lastBox.LayerRowNum;
+                newLayerColNum = lastBox.LayerColNum;
+
+                if (lastBox.LayerColNum < config.BOX_COUNT)
+                {
+                    newLayerColNum = lastBox.LayerColNum + 1;
+                }
+                else if (lastBox.LayerRowNum < config.LAYER_COUNT)
+                {
+                    newLayerColNum = 1;
+                    newLayerRowNum = lastBox.LayerRowNum + 1;
+                }
+                else if (lastBox.RackNum < config.RACK_COUNT)
+                {
+                    newLayerColNum = 1;
+                    newLayerRowNum = 1;
+                    newRackNum = lastBox.RackNum + 1;
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            var newBox = new BoxView
+            {
+                BoxNo = $"R{newRackNum:00}L{newLayerRowNum:00}C{newLayerColNum:00}",
+                PartNum = NormalizeOptional(holderData.PartNum),
+                PenNum = NormalizeOptional(holderData.PenNum),
+                ProductName = NormalizeOptional(holderData.ProductName),
+                RackNum = newRackNum,
+                LayerRowNum = newLayerRowNum,
+                LayerColNum = newLayerColNum,
+                BoxListCount = 0,
+                BoxListPercentage = 0,
+                IsSuggestedTarget = false,
+                HasReleaseStatus = false
+            };
+
+            if (!TryEnsureSuggestedFgiShipBox(
+                    newBox,
+                    config,
+                    holderData.Lec))
+            {
+                return null;
+            }
+
+            newBox.IsSuggestedTarget = true;
+            return newBox;
         }
 
         public async Task<ScanHolderJobResponse> ScanHolderJobAsync(string holder, string token, string? clientKey)
@@ -285,7 +529,12 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            var fieldNames = new[]
+            var isFgi = string.Equals(
+                clientKey?.Trim(),
+                "WDC_STACKER.CLIENT.FGI",
+                StringComparison.OrdinalIgnoreCase);
+
+            var fieldNames = new List<string>
             {
                 "Holder",
                 "BuildCode",
@@ -302,9 +551,21 @@ namespace WDC_STACKER.API.Aggregate
                 "WaferNum"
             };
 
+            if (isFgi)
+            {
+                fieldNames.AddRange(new[]
+                {
+                    "PartNumber",
+                    "Experiment",
+                    "QuantityGood",
+                    "QuantityLoaded",
+                    "SliderCount"
+                });
+            }
+
             var holderJobResult = await ExecuteFeatsQueryAsync(
                 queryType: "HolderJob",
-                fieldNames: fieldNames,
+                fieldNames: fieldNames.ToArray(),
                 filterName: "Holder",
                 filterValue: holder,
                 recordLimit: 250,
@@ -342,6 +603,13 @@ namespace WDC_STACKER.API.Aggregate
             var operation = GetField(row, "Operation");
             var parentHolder = GetField(row, "ParentHolder");
             var shipTicket = GetField(row, "ShipTicket");
+            var partNumber = GetField(row, "PartNumber");
+            var experimentId = isFgi
+                ? GetField(row, "Experiment")
+                : string.Empty;
+            var productName = GetField(row, "ProductName");
+            var buildCode = GetField(row, "BuildCode");
+            var binName = GetField(row, "BinName");
 
             // 1. Operation must match config.ValidOperation
             if (!string.Equals(operation, config.ValidOperation, StringComparison.OrdinalIgnoreCase))
@@ -357,37 +625,168 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            // 2. ParentHolder must have value
-            //if (string.IsNullOrWhiteSpace(parentHolder))
-            if (!string.IsNullOrWhiteSpace(parentHolder))
-            {
-                return new ScanHolderJobResponse
-                {
-                    Success = false,
-                    CanAssign = false,
-                    Holder = holder,
-                    Message = "ParentHolder has no value!",
-                    HolderJob = row,
-                    RawQueryResult = holderJobResult
-                };
-            }
+            // Note: disable for now while on development/QA, enable once on UAT/PROD
+            // 2. ParentHolder must have No value 
+            //if (!string.IsNullOrWhiteSpace(parentHolder))
+            //{
+            //    return new ScanHolderJobResponse
+            //    {
+            //        Success = false,
+            //        CanAssign = false,
+            //        Holder = holder,
+            //        Message = "ParentHolder has value!",
+            //        HolderJob = row,
+            //        RawQueryResult = holderJobResult
+            //    };
+            //}
 
+            // Note: disable for now while on development/QA, enable once on UAT/PROD
             // 3. ShipTicket must be empty
-            if (!string.IsNullOrWhiteSpace(shipTicket))
+            //if (!string.IsNullOrWhiteSpace(shipTicket))
+            //{
+            //    return new ScanHolderJobResponse
+            //    {
+            //        Success = false,
+            //        CanAssign = false,
+            //        Holder = holder,
+            //        Message = "ShipTicket has value!",
+            //        HolderJob = row,
+            //        RawQueryResult = holderJobResult
+            //    };
+            //}
+
+            // 4. FGI Box identity requires PartNum and ProductName.
+            // If PartNumber is missing, MoveOut to RBF2 and apply Hold.
+            if (isFgi && string.IsNullOrWhiteSpace(partNumber))
+            {
+                // MoveOut to RBF2
+                var moveOutResult = await _featsService.MoveOutAsync(
+                    holder: holder,
+                    holderType: null,
+                    resource: "RBF2",
+                    nextOp: null,
+                    username: credentials.Username,
+                    password: credentials.Password);
+
+                if (!moveOutResult.Success)
+                {
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"MoveOut to RBF2 failed: {moveOutResult.Message}",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                // Apply Hold with reason TAP and comment NO PART NUMBER
+                var holdResult = await _featsService.HoldHolderAsync(
+                    holder: holder,
+                    holderType: null,
+                    holdReasonCode: "TAP",
+                    comment: "NO PART NUMBER",
+                    username: credentials.Username,
+                    password: credentials.Password);
+
+                if (!holdResult.Success)
+                {
+                    // Compensating logic: Hold failed after MoveOut succeeded
+                    // Log the partial failure state and return error
+                    _logger.LogWarning(
+                        "Partial failure for holder={Holder}: MoveOut succeeded but Hold failed. Message: {HoldMessage}",
+                        holder,
+                        holdResult.Message);
+
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"MoveOut to RBF2 succeeded, but Hold failed: {holdResult.Message}. Holder is now moved out but not held.",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                return new ScanHolderJobResponse
+                {
+                    Success = false,
+                    CanAssign = false,
+                    Holder = holder,
+                    Message = "PartNumber is missing. Holder has been moved out to RBF2 and held with reason TAP.",
+                    HolderJob = row,
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            if (isFgi && string.IsNullOrWhiteSpace(productName))
             {
                 return new ScanHolderJobResponse
                 {
                     Success = false,
                     CanAssign = false,
                     Holder = holder,
-                    Message = "ShipTicket has value!",
+                    Message = "ProductName is missing.",
                     HolderJob = row,
                     RawQueryResult = holderJobResult
                 };
             }
 
-            // 4. If All checks are okay (steps 1 to 3), get the grid view box mapping data
-            var gridViewBoxMap = await MapGridViewBoxData(clientKey);
+            if (isFgi && !TryGetValidatedHolderQty(row, out _))
+            {
+                return new ScanHolderJobResponse
+                {
+                    Success = false,
+                    CanAssign = false,
+                    Holder = holder,
+                    Message = "Holder QTY is invalid",
+                    HolderJob = row,
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            HolderAssignInsertData? suggestionData = null;
+
+            if (isFgi)
+            {
+                var penResult = await ResolveFgiPenNumAsync(
+                    experimentId,
+                    credentials.Username,
+                    credentials.Password);
+
+                if (!penResult.Success)
+                {
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = penResult.QueryResult?.Message ??
+                                  "Unable to query ExperimentDefinition.",
+                        HolderJob = row,
+                        RawQueryResult = penResult.QueryResult
+                    };
+                }
+
+                suggestionData = new HolderAssignInsertData
+                {
+                    PartNum = partNumber.Trim(),
+                    PenNum = penResult.PenNum,
+                    ProductName = productName.Trim(),
+                    Lec = BuildFgiLecOrNull(
+                        config,
+                        buildCode,
+                        binName,
+                        productName)
+                };
+            }
+
+            // 5. If all validation checks pass, map the target for this holder.
+            var gridViewBoxMap = await MapGridViewBoxData(
+                clientKey,
+                suggestionData);
 
             if (!gridViewBoxMap.HasSuggestedTarget)
             {
@@ -445,9 +844,28 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
+            var holderJobFieldNames = new List<string>
+            {
+                "BuildCode",
+                "BinName",
+                "ProductName"
+            };
+
+            if (isFgi)
+            {
+                holderJobFieldNames.AddRange(new[]
+                {
+                    "PartNumber",
+                    "Experiment",
+                    "QuantityGood",
+                    "QuantityLoaded",
+                    "SliderCount"
+                });
+            }
+
             var holderJobResult = await ExecuteFeatsQueryAsync(
                 queryType: "HolderJob",
-                fieldNames: new[] { "BuildCode", "BinName", "ProductName" },
+                fieldNames: holderJobFieldNames.ToArray(),
                 filterName: "Holder",
                 filterValue: holder,
                 recordLimit: 250,
@@ -480,61 +898,136 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
+            var partNum = isFgi
+                ? GetField(row, "PartNumber")
+                : string.Empty;
+            var experimentId = isFgi
+                ? GetField(row, "Experiment")
+                : string.Empty;
+            string? penNum = null;
             var buildCode = GetField(row, "BuildCode");
             var binName = GetField(row, "BinName");
             var productName = GetField(row, "ProductName");
+            string? lecValue;
+            int? holderQty = null;
 
-            if (binName.Length != 5)
+            if (isFgi)
             {
-                return new AssignHolderResponse
+                if (string.IsNullOrWhiteSpace(partNum) ||
+                    string.IsNullOrWhiteSpace(productName))
                 {
-                    Success = false,
-                    Holder = holder,
-                    BoxName = boxNo,
-                    Message = "BinName length is not eligible.",
-                    RawQueryResult = holderJobResult
-                };
-            }
+                    return new AssignHolderResponse
+                    {
+                        Success = false,
+                        Holder = holder,
+                        BoxName = boxNo,
+                        Message = "PartNumber or ProductName is missing.",
+                        RawQueryResult = holderJobResult
+                    };
+                }
 
-            if (string.IsNullOrWhiteSpace(buildCode) || string.IsNullOrWhiteSpace(productName))
-            {
-                return new AssignHolderResponse
+                if (!TryGetValidatedHolderQty(row, out var validatedHolderQty))
                 {
-                    Success = false,
-                    Holder = holder,
-                    BoxName = boxNo,
-                    Message = "BuildCode or ProductName is missing.",
-                    RawQueryResult = holderJobResult
-                };
-            }
+                    return new AssignHolderResponse
+                    {
+                        Success = false,
+                        Holder = holder,
+                        BoxName = boxNo,
+                        Message = "Holder QTY is invalid",
+                        RawQueryResult = holderJobResult
+                    };
+                }
 
-            var config = await _capacityConfigService.GetAsync(clientKey);
-            var firstPartKey = $"{buildCode[0]}{binName[^1]}";
-            var firstPart = string.Empty;
+                holderQty = validatedHolderQty;
 
-            if (string.Equals(firstPartKey, nameof(config.SJ), StringComparison.OrdinalIgnoreCase))
-            {
-                firstPart = config.SJ;
-            }
-            else if (string.Equals(firstPartKey, nameof(config.SD), StringComparison.OrdinalIgnoreCase))
-            {
-                firstPart = config.SD;
+                var penResult = await ResolveFgiPenNumAsync(
+                    experimentId,
+                    credentials.Username,
+                    credentials.Password);
+
+                if (!penResult.Success)
+                {
+                    return new AssignHolderResponse
+                    {
+                        Success = false,
+                        Holder = holder,
+                        BoxName = boxNo,
+                        Message = penResult.QueryResult?.Message ??
+                                  "Unable to query ExperimentDefinition.",
+                        RawQueryResult = penResult.QueryResult
+                    };
+                }
+
+                penNum = penResult.PenNum;
+                var config = await _capacityConfigService.GetAsync(clientKey);
+                lecValue = BuildFgiLecOrNull(
+                    config,
+                    buildCode,
+                    binName,
+                    productName);
             }
             else
             {
-                return new AssignHolderResponse
+                // Preserve the original PWD validation and LEC formula.
+                if (binName.Length != 5)
                 {
-                    Success = false,
-                    Holder = holder,
-                    BoxName = boxNo,
-                    Message = "BuildCode and BinName combination is not eligible.",
-                    RawQueryResult = holderJobResult
-                };
-            }
+                    return new AssignHolderResponse
+                    {
+                        Success = false,
+                        Holder = holder,
+                        BoxName = boxNo,
+                        Message = "BinName length is not eligible.",
+                        RawQueryResult = holderJobResult
+                    };
+                }
 
-            var secondPart = productName[^1].ToString();
-            var thirdPart = binName[..4];
-            var lecValue = firstPart + secondPart + thirdPart;
+                if (string.IsNullOrWhiteSpace(buildCode) ||
+                    string.IsNullOrWhiteSpace(productName))
+                {
+                    return new AssignHolderResponse
+                    {
+                        Success = false,
+                        Holder = holder,
+                        BoxName = boxNo,
+                        Message = "BuildCode or ProductName is missing.",
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                var config = await _capacityConfigService.GetAsync(clientKey);
+                var firstPartKey = $"{buildCode[0]}{binName[^1]}";
+                var firstPart = string.Empty;
+
+                if (string.Equals(
+                        firstPartKey,
+                        nameof(config.SJ),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    firstPart = config.SJ;
+                }
+                else if (string.Equals(
+                             firstPartKey,
+                             nameof(config.SD),
+                             StringComparison.OrdinalIgnoreCase))
+                {
+                    firstPart = config.SD;
+                }
+                else
+                {
+                    return new AssignHolderResponse
+                    {
+                        Success = false,
+                        Holder = holder,
+                        BoxName = boxNo,
+                        Message = "BuildCode and BinName combination is not eligible.",
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                var secondPart = productName[^1].ToString();
+                var thirdPart = binName[..4];
+                lecValue = firstPart + secondPart + thirdPart;
+            }
 
             var holderAlreadyAssigned = await _stackerSqlService.HolderAssignExistsAsync(holder, process);
 
@@ -570,6 +1063,13 @@ namespace WDC_STACKER.API.Aggregate
                 Holder = holder,
                 BoxName = boxNo,
                 ShipBoxName = isFgi ? shipBoxName : string.Empty,
+                Qty = isFgi ? holderQty : null,
+                PartNum = isFgi
+                    ? partNum.Trim()
+                    : string.Empty,
+                PenNum = isFgi
+                    ? penNum
+                    : null,
                 ProductName = productName,
                 Lec = lecValue,
                 Factory = buildCode,
@@ -582,7 +1082,10 @@ namespace WDC_STACKER.API.Aggregate
             {
                 if (isFgi)
                 {
-                    var shipBoxExists = await _stackerSqlService.ShipBoxNameExistsAsync(shipBoxName);
+                    var shipBoxExists =
+                        await _stackerSqlService.ShipBoxNameExistsAsync(
+                            boxNo,
+                            shipBoxName);
 
                     var shipBoxDetails = shipBoxExists
                         ? null
@@ -590,7 +1093,7 @@ namespace WDC_STACKER.API.Aggregate
                         {
                             BoxNo = boxNo,
                             ShipBoxName = shipBoxName,
-                            ShipBoxStatus = "RELEASE",
+                            ShipBoxStatus = string.Empty,
                             ShipBoxNum = request.ShipBoxNum,
                             LayerRowNum = request.ShipBoxLayerRowNum,
                             LayerColNum = request.ShipBoxLayerColNum,
@@ -605,6 +1108,31 @@ namespace WDC_STACKER.API.Aggregate
                     await _stackerSqlService.InsertAssignmentAsync(boxDetails, holderAssign);
                 }
             }
+            catch (InvalidOperationException ex) when (isFgi)
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Lec = lecValue ?? string.Empty,
+                    Message = ex.Message,
+                    RawQueryResult = holderJobResult
+                };
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex)
+                when (isFgi && ex.Number >= 51000 && ex.Number <= 51099)
+            {
+                return new AssignHolderResponse
+                {
+                    Success = false,
+                    Holder = holder,
+                    BoxName = boxNo,
+                    Lec = lecValue ?? string.Empty,
+                    Message = ex.Message,
+                    RawQueryResult = holderJobResult
+                };
+            }
             catch
             {
                 return new AssignHolderResponse
@@ -612,20 +1140,22 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     Holder = holder,
                     BoxName = boxNo,
-                    Lec = lecValue,
+                    Lec = lecValue ?? string.Empty,
                     Message = "Unable to Assign.",
                     RawQueryResult = holderJobResult
                 };
             }
 
-            var gridViewBoxMap = await MapGridViewBoxData(clientKey);
+            var gridViewBoxMap = await MapGridViewBoxData(
+                clientKey,
+                isFgi ? holderAssign : null);
 
             return new AssignHolderResponse
             {
                 Success = true,
                 Holder = holder,
                 BoxName = boxNo,
-                Lec = lecValue,
+                Lec = lecValue ?? string.Empty,
                 BoxDetailsCreated = !boxExists,
                 GridViewBoxes = gridViewBoxMap.Boxes,
                 Message = isFgi
@@ -642,6 +1172,204 @@ namespace WDC_STACKER.API.Aggregate
             return row.TryGetValue(fieldName, out var value)
                 ? value?.Trim() ?? string.Empty
                 : string.Empty;
+        }
+
+        private static bool TryGetValidatedHolderQty(Dictionary<string, string> row, out int qty)
+        {
+            qty = 0;
+
+            if (!int.TryParse(
+                    GetField(row, "QuantityGood"),
+                    out var quantityGood) ||
+                !int.TryParse(
+                    GetField(row, "QuantityLoaded"),
+                    out var quantityLoaded) ||
+                !int.TryParse(
+                    GetField(row, "SliderCount"),
+                    out var sliderCount))
+            {
+                return false;
+            }
+
+            if (quantityGood != quantityLoaded ||
+                quantityGood != sliderCount)
+            {
+                return false;
+            }
+
+            qty = quantityGood;
+            return true;
+        }
+
+        private static bool TryExtractPenNum(string? experimentDescription, out string penNum)
+        {
+            penNum = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(experimentDescription))
+                return false;
+
+            const string marker = "PEN#";
+
+            var markerIndex = experimentDescription.IndexOf(
+                marker,
+                StringComparison.OrdinalIgnoreCase);
+
+            if (markerIndex < 0)
+                return false;
+
+            var valueStart = markerIndex + marker.Length;
+
+            while (valueStart < experimentDescription.Length &&
+                   char.IsWhiteSpace(experimentDescription[valueStart]))
+            {
+                valueStart++;
+            }
+
+            if (valueStart < experimentDescription.Length &&
+                experimentDescription[valueStart] == ':')
+            {
+                valueStart++;
+
+                while (valueStart < experimentDescription.Length &&
+                       char.IsWhiteSpace(experimentDescription[valueStart]))
+                {
+                    valueStart++;
+                }
+            }
+
+            var pipeIndex =
+                experimentDescription.IndexOf('|', valueStart);
+
+            if (pipeIndex < 0)
+                return false;
+
+            penNum = experimentDescription[valueStart..pipeIndex].Trim();
+
+            return penNum.Length > 0;
+        }
+
+        private async Task<(
+            bool Success,
+            string? PenNum,
+            FeatsQueryResponse? QueryResult)> ResolveFgiPenNumAsync(
+                string experimentId,
+                string username,
+                string password)
+        {
+            if (string.IsNullOrWhiteSpace(experimentId))
+                return (true, null, null);
+
+            var result = await ExecuteFeatsQueryAsync(
+                queryType: "ExperimentDefinition",
+                fieldNames: new[] { "ExperimentDescription" },
+                filterName: "ExperimentID",
+                filterValue: experimentId,
+                recordLimit: 1,
+                username: username,
+                password: password);
+
+            if (!result.Success)
+                return (false, null, result);
+
+            var row = result.ParsedResult.Rows.FirstOrDefault();
+
+            if (row is not null &&
+                TryExtractPenNum(
+                    GetField(row, "ExperimentDescription"),
+                    out var penNum))
+            {
+                return (true, penNum, result);
+            }
+
+            // A missing experiment row, description, or PEN marker is a
+            // valid null-PEN holder. Only a technical FEATS failure stops.
+            return (true, null, result);
+        }
+
+        private static string? BuildFgiLecOrNull(
+            CapacityConfig config,
+            string buildCode,
+            string binName,
+            string productName)
+        {
+            if (string.IsNullOrWhiteSpace(buildCode) ||
+                string.IsNullOrWhiteSpace(productName) ||
+                binName.Length != 5)
+            {
+                return null;
+            }
+
+            var firstPartKey = $"{buildCode[0]}{binName[^1]}";
+
+            var firstPart = string.Equals(
+                firstPartKey,
+                nameof(config.SJ),
+                StringComparison.OrdinalIgnoreCase)
+                ? config.SJ
+                : string.Equals(
+                    firstPartKey,
+                    nameof(config.SD),
+                    StringComparison.OrdinalIgnoreCase)
+                    ? config.SD
+                    : null;
+
+            if (string.IsNullOrWhiteSpace(firstPart))
+                return null;
+
+            return firstPart.Trim()
+                + productName[^1]
+                + binName[..4];
+        }
+
+        private async Task<(bool Success, string Message, bool IsOnInSiteHold)> CheckHolderInSiteHoldAsync(string holder, string username, string password)
+        {
+            var holderJobResult = await ExecuteFeatsQueryAsync(
+                queryType: "HolderJob",
+                fieldNames:
+                [
+                    "Holder",
+                    "HoldReason",
+                    "HoldComment"
+                ],
+                filterName: "Holder",
+                filterValue: holder,
+                recordLimit: 250,
+                username: username,
+                password: password);
+
+            if (!holderJobResult.Success)
+            {
+                return (
+                    false,
+                    holderJobResult.Message,
+                    false
+                );
+            }
+
+            var row =
+                holderJobResult.ParsedResult.Rows.FirstOrDefault();
+
+            if (row is null)
+            {
+                return (
+                    false,
+                    "HolderJob record was not found.",
+                    false
+                );
+            }
+
+            var holdReason = GetField(row, "HoldReason");
+            var holdComment = GetField(row, "HoldComment");
+
+            var isOnInSiteHold =
+                !string.IsNullOrWhiteSpace(holdReason) ||
+                !string.IsNullOrWhiteSpace(holdComment);
+
+            return (
+                true,
+                string.Empty,
+                isOnInSiteHold
+            );
         }
 
         private async Task<FeatsQueryResponse> ExecuteFeatsQueryAsync(string queryType, string[] fieldNames, string filterName, string filterValue, int recordLimit, string username, string password)
@@ -670,7 +1398,12 @@ namespace WDC_STACKER.API.Aggregate
             return _stackerSqlService.GetBoxAssignmentsAsync(boxName, process);
         }
 
-        public async Task<List<ShipBoxView>> GetShipBoxesAsync(string boxNo, bool suggest, string? clientKey)
+        public async Task<List<ShipBoxView>> GetShipBoxesAsync(
+            string boxNo,
+            bool suggest,
+            string? clientKey,
+            string? lec = null,
+            bool hasLecContext = false)
         {
             var config = await _capacityConfigService.GetAsync(clientKey);
             var process = ResolveProcess(clientKey);
@@ -683,7 +1416,7 @@ namespace WDC_STACKER.API.Aggregate
                 config.MAX_ITEM_PER_BOX_SHIPBOX,
                 process);
 
-            if (!suggest)
+            if (!suggest || !hasLecContext)
                 return shipBoxes;
 
             var box = new BoxView
@@ -692,8 +1425,127 @@ namespace WDC_STACKER.API.Aggregate
                 ShipBoxes = shipBoxes
             };
 
-            EnsureSuggestedShipBox(box, config);
+            TryEnsureSuggestedFgiShipBox(
+                box,
+                config,
+                lec);
+
             return box.ShipBoxes;
+        }
+
+        public Task<List<FgiWithdrawalRequestView>> GetFgiWithdrawalRequestsAsync()
+        {
+            return _stackerSqlService.GetFgiWithdrawalRequestsAsync();
+        }
+
+        public async Task<( bool Success, string Message,  FgiWithdrawalDisassociationPreviewView? Preview)> GetFgiWithdrawalDisassociationPreviewAsync(string lec, string? penNum, int total, string token)
+        {
+            if (!_credentialStore.TryGet(
+                    token,
+                    out var credentials))
+            {
+                return (
+                    false,
+                    "Invalid or expired token.",
+                    null
+                );
+            }
+
+            var preview =
+                await _stackerSqlService
+                    .GetFgiWithdrawalDisassociationPreviewAsync(
+                        lec,
+                        penNum,
+                        total);
+
+            foreach (var record in preview.SourceRecords.Where(
+                         record => record.IsIncluded))
+            {
+                var holdCheck =
+                    await CheckHolderInSiteHoldAsync(
+                        record.Holder,
+                        credentials.Username,
+                        credentials.Password);
+
+                if (!holdCheck.Success)
+                {
+                    return (
+                        false,
+                        $"Unable to check InSite hold for " +
+                        $"{record.Holder}: {holdCheck.Message}",
+                        null
+                    );
+                }
+
+                record.Status = holdCheck.IsOnInSiteHold
+                    ? "IN-SITE HOLD"
+                    : "HOLD PASS";
+            }
+
+            return (
+                true,
+                "Disassociation preview loaded successfully.",
+                preview
+            );
+        }
+
+        public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, IReadOnlyCollection<string> includedHolders, string token)
+        {
+            if (!_credentialStore.TryGet(token, out _))
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = "Invalid or expired token."
+                };
+            }
+
+            return await _stackerSqlService
+                .DisassociateFgiWithdrawalAsync(
+                    requestId,
+                    includedHolders);
+        }
+
+        public async Task<(bool Success, string Message, string AcknowledgeBy)> AcknowledgeFgiWithdrawalRequestAsync(long requestId, string token)
+        {
+            if (!_credentialStore.TryGet(token, out var credentials))
+            {
+                return (
+                    false,
+                    "Invalid or expired token.",
+                    string.Empty
+                );
+            }
+
+            var userId = NormalizeUserId(credentials.Username);
+
+            var updated =
+                await _stackerSqlService.AcknowledgeFgiWithdrawalRequestAsync(
+                    requestId,
+                    userId);
+
+            if (!updated)
+            {
+                return (
+                    false,
+                    "The request was not found or was already acknowledged.",
+                    string.Empty
+                );
+            }
+
+            return (
+                true,
+                "Withdrawal request acknowledged successfully.",
+                userId
+            );
+        }
+
+        public Task<FgiWithdrawalRackView?> GetFgiWithdrawalLayoutAsync(
+            string lec,
+            string? clientKey)
+        {
+            var process = ResolveProcess(clientKey);
+            return _stackerSqlService.GetFgiWithdrawalLayoutAsync(lec, process);
         }
 
         public Task<List<BoxAssignment>> GetShipBoxAssignmentsAsync(string boxName, string shipBoxName, string? clientKey)
@@ -714,36 +1566,18 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             //-- INSIGHT HOLD CHECK :START -----------------------------------------------\\
-            var holderJobResult = await ExecuteFeatsQueryAsync( queryType: "HolderJob", fieldNames: new[] { "Holder","HoldReason", "HoldComment" },
-                filterName: "Holder",
-                filterValue: holder,
-                recordLimit: 250,
-                username: credentials.Username,
-                password: credentials.Password
-            ); 
-            if (!holderJobResult.Success)
+            var holdCheck = await CheckHolderInSiteHoldAsync(holder, credentials.Username, credentials.Password);
+
+            if (!holdCheck.Success)
             {
                 return (
                     false,
-                    holderJobResult.Message,
+                    holdCheck.Message,
                     new List<BoxView>()
                 );
-            } 
-            var row = holderJobResult.ParsedResult.Rows.FirstOrDefault(); 
-            if (row is null)
-            {
-                return (
-                    false,
-                    "HolderJob record was not found.",
-                    new List<BoxView>()
-                );
-            } 
-            var holdReason = GetField(row, "HoldReason");
-            var holdComment = GetField(row, "HoldComment"); 
-            var fieldsAreEmpty =
-                string.IsNullOrWhiteSpace(holdReason) &&
-                string.IsNullOrWhiteSpace(holdComment); 
-            if (!fieldsAreEmpty)
+            }
+
+            if (holdCheck.IsOnInSiteHold)
             {
                 return (
                     false,
@@ -792,6 +1626,21 @@ namespace WDC_STACKER.API.Aggregate
                 "Holder disassociated successfully.",
                 gridView.Boxes
             );
+        }
+
+        private static string NormalizeUserId(string username)
+        {
+            var userId = username.Trim();
+
+            var slashIndex = userId.LastIndexOf('\\');
+            if (slashIndex >= 0)
+                userId = userId[(slashIndex + 1)..];
+
+            var atIndex = userId.IndexOf('@');
+            if (atIndex > 0)
+                userId = userId[..atIndex];
+
+            return userId;
         }
 
         private static string ResolveProcess(string? clientKey)
