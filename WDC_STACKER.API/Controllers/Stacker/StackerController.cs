@@ -226,7 +226,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 });
             }
 
-            var result = await _aggregate.GetFgiWithdrawalDisassociationPreviewAsync(lec.Trim(), string.IsNullOrWhiteSpace(penNum) ? null : penNum.Trim(), total.Value, token);
+            var result = await _aggregate.GetFgiWithdrawalDisassociationPreviewAsync(lec.Trim(), string.IsNullOrWhiteSpace(penNum) ? null : penNum.Trim(), total.Value, token, GetClientKey());
 
             if (!result.Success || result.Preview is null)
             {

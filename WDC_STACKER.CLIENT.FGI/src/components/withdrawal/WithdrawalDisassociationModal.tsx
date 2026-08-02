@@ -192,26 +192,29 @@ function RecordsTable({
                                 >
                                         {record.IsIncluded
                                             ? "—"
-                                            : record.RunningTotal >=
-                                                targetTotal
-                                                ? "TARGET TOTAL ALREADY REACHED"
-                                                : `EXCEEDS FIFO CAP ${maximumTotalQty}`}
+                                            : record.Status === "IN-SITE HOLD" ||
+                                                record.Status === "AHS HOLD"
+                                                ? record.Status
+                                                : record.RunningTotal >=
+                                                    targetTotal
+                                                    ? "TARGET TOTAL ALREADY REACHED"
+                                                    : `EXCEEDS FIFO CAP ${maximumTotalQty}`}
                                 </td>
 
                                 <td aria-label="Status">
-                                    {record.IsIncluded &&
-                                        record.Status && (
-                                            <span
-                                                className={`withdrawal-fifo-status ${record.Status === "VERIFIED"
-                                                    ? "is-verified"
-                                                    : record.Status === "IN-SITE HOLD"
-                                                        ? "is-insite-hold"
-                                                        : "is-hold-pass"
-                                                }`}
-                                            >
-                                                {record.Status}
-                                            </span>
-                                        )}
+                                    {record.Status && (
+                                        <span
+                                            className={`withdrawal-fifo-status ${record.Status === "VERIFIED"
+                                                ? "is-verified"
+                                                : record.Status === "IN-SITE HOLD" ||
+                                                    record.Status === "AHS HOLD"
+                                                    ? "is-insite-hold"
+                                                    : "is-hold-pass"
+                                            }`}
+                                        >
+                                            {record.Status}
+                                        </span>
+                                    )}
                                 </td>
                                 </tr>
                             );

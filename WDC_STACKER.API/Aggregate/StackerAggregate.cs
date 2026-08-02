@@ -1609,7 +1609,7 @@ namespace WDC_STACKER.API.Aggregate
             return _stackerSqlService.GetFgiWithdrawalRequestsAsync();
         }
 
-        public async Task<( bool Success, string Message,  FgiWithdrawalDisassociationPreviewView? Preview)> GetFgiWithdrawalDisassociationPreviewAsync(string lec, string? penNum, int total, string token)
+        public async Task<( bool Success, string Message,  FgiWithdrawalDisassociationPreviewView? Preview)> GetFgiWithdrawalDisassociationPreviewAsync(string lec, string? penNum, int total, string token, string? clientKey)
         {
             if (!_credentialStore.TryGet(
                     token,
@@ -1629,35 +1629,107 @@ namespace WDC_STACKER.API.Aggregate
                         penNum,
                         total);
 
-            foreach (var record in preview.SourceRecords.Where(
-                         record => record.IsIncluded))
+            var config = await _capacityConfigService.GetAsync(clientKey);
+            var holdValidationOperations = config.HoldValidationOperations;
+
+            //-- CHECK HOLD (FEATS + AHS) WITH FIFO BACKFILL: START ----------------------\\
+            var runningTotal = 0L;
+
+            foreach (var record in preview.SourceRecords)
             {
+                var qualifiesByQty =
+                    runningTotal < total &&
+                    record.Qty <= preview.MaximumTotalQty - runningTotal;
+
+                if (!qualifiesByQty)
+                {
+                    record.IsIncluded = false;
+                    record.RunningTotal = runningTotal;
+                    continue;
+                }
+
                 var holdCheck =
-                    await CheckHolderInSiteHoldAsync(
+                    await CheckHolderHoldsAsync(
                         record.Holder,
                         credentials.Username,
-                        credentials.Password);
+                        credentials.Password,
+                        holdValidationOperations);
 
                 if (!holdCheck.Success)
                 {
                     return (
                         false,
-                        $"Unable to check InSite hold for " +
+                        $"Unable to check holds for " +
                         $"{record.Holder}: {holdCheck.Message}",
                         null
                     );
                 }
 
-                record.Status = holdCheck.IsOnInSiteHold
-                    ? "IN-SITE HOLD"
-                    : "HOLD PASS";
+                if (holdCheck.IsOnHold)
+                {
+                    record.IsIncluded = false;
+                    record.Status = holdCheck.HoldSource;
+                    record.RunningTotal = runningTotal;
+                }
+                else
+                {
+                    record.IsIncluded = true;
+                    record.Status = "HOLD PASS";
+                    runningTotal += record.Qty;
+                    record.RunningTotal = runningTotal;
+                }
             }
+
+            preview.TotalQty = runningTotal;
+            //-- CHECK HOLD (FEATS + AHS) WITH FIFO BACKFILL: END ------------------------//
 
             return (
                 true,
                 "Disassociation preview loaded successfully.",
                 preview
             );
+        }
+
+        /// <summary>
+        /// Combined "Check Hold" step: verifies a holder is not on FEATS
+        /// InSite hold and is not on AHS hold for any of the configured
+        /// <see cref="CapacityConfig.HoldValidationOperations"/>.
+        /// </summary>
+        private async Task<(bool Success, string Message, bool IsOnHold, string HoldSource)> CheckHolderHoldsAsync(string holder, string username, string password, IReadOnlyList<string> holdValidationOperations)
+        {
+            var inSiteHoldCheck =
+                await CheckHolderInSiteHoldAsync(
+                    holder,
+                    username,
+                    password);
+
+            if (!inSiteHoldCheck.Success)
+            {
+                return (false, inSiteHoldCheck.Message, false, string.Empty);
+            }
+
+            if (inSiteHoldCheck.IsOnInSiteHold)
+            {
+                return (true, string.Empty, true, "IN-SITE HOLD");
+            }
+
+            foreach (var operation in holdValidationOperations)
+            {
+                var ahsHoldCheck =
+                    await _ahsService.CheckHoldAsync(holder, operation);
+
+                if (!ahsHoldCheck.Success)
+                {
+                    return (false, ahsHoldCheck.Message, false, string.Empty);
+                }
+
+                if (ahsHoldCheck.IsOnHold)
+                {
+                    return (true, string.Empty, true, "AHS HOLD");
+                }
+            }
+
+            return (true, string.Empty, false, string.Empty);
         }
 
         /// <summary>
