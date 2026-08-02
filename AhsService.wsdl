@@ -1,0 +1,559 @@
+<?xml version="1.0" encoding="utf-8"?>
+<wsdl:definitions xmlns:s="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:http="http://schemas.xmlsoap.org/wsdl/http/" xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/" xmlns:tns="http://tempuri.org/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tm="http://microsoft.com/wsdl/mime/textMatching/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" targetNamespace="http://tempuri.org/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <wsdl:types>
+    <s:schema elementFormDefault="qualified" targetNamespace="http://tempuri.org/">
+      <s:element name="HelloWorld">
+        <s:complexType />
+      </s:element>
+      <s:element name="HelloWorldResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="HelloWorldResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="Login">
+        <s:complexType />
+      </s:element>
+      <s:element name="LoginResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="LoginResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="HGAWIPCheck">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="HGA" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="operation" type="s:string" />
+            <s:element minOccurs="1" maxOccurs="1" name="checkExist" type="s:boolean" />
+            <s:element minOccurs="0" maxOccurs="1" name="p_holdid" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="holdDetails" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="HGAWIPCheckResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="HGAWIPCheckResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="HGACheck">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="holder" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="operation" type="s:string" />
+            <s:element minOccurs="1" maxOccurs="1" name="checkExist" type="s:boolean" />
+            <s:element minOccurs="0" maxOccurs="1" name="p_holdid" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="HGACheckResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="HGACheckResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="SliderCheck2">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="holder" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="operation" type="s:string" />
+            <s:element minOccurs="1" maxOccurs="1" name="checkExist" type="s:boolean" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="SliderCheck2Response">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="SliderCheck2Result" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="SliderCheck">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="holder" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="operation" type="s:string" />
+            <s:element minOccurs="1" maxOccurs="1" name="checkExist" type="s:boolean" />
+            <s:element minOccurs="0" maxOccurs="1" name="p_holdid" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="SliderCheckResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="SliderCheckResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckHold">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="holder" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="currentOp" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckHoldResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="CheckHoldResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="Execute_HoldHolder">
+        <s:complexType />
+      </s:element>
+      <s:element name="Execute_HoldHolderResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="Execute_HoldHolderResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckUser">
+        <s:complexType />
+      </s:element>
+      <s:element name="CheckUserResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="CheckUserResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckLoginAD">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="userID" type="s:string" />
+            <s:element minOccurs="0" maxOccurs="1" name="password" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckLoginADResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="1" maxOccurs="1" name="CheckLoginADResult" type="s:boolean" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckEmail">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="email" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="CheckEmailResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="1" maxOccurs="1" name="CheckEmailResult" type="s:boolean" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="GetHolderJob">
+        <s:complexType />
+      </s:element>
+      <s:element name="GetHolderJobResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="GetHolderJobResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="GetUserPrivileges">
+        <s:complexType />
+      </s:element>
+      <s:element name="GetUserPrivilegesResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="GetUserPrivilegesResult" type="s:string" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+    </s:schema>
+  </wsdl:types>
+  <wsdl:message name="HelloWorldSoapIn">
+    <wsdl:part name="parameters" element="tns:HelloWorld" />
+  </wsdl:message>
+  <wsdl:message name="HelloWorldSoapOut">
+    <wsdl:part name="parameters" element="tns:HelloWorldResponse" />
+  </wsdl:message>
+  <wsdl:message name="LoginSoapIn">
+    <wsdl:part name="parameters" element="tns:Login" />
+  </wsdl:message>
+  <wsdl:message name="LoginSoapOut">
+    <wsdl:part name="parameters" element="tns:LoginResponse" />
+  </wsdl:message>
+  <wsdl:message name="HGAWIPCheckSoapIn">
+    <wsdl:part name="parameters" element="tns:HGAWIPCheck" />
+  </wsdl:message>
+  <wsdl:message name="HGAWIPCheckSoapOut">
+    <wsdl:part name="parameters" element="tns:HGAWIPCheckResponse" />
+  </wsdl:message>
+  <wsdl:message name="HGACheckSoapIn">
+    <wsdl:part name="parameters" element="tns:HGACheck" />
+  </wsdl:message>
+  <wsdl:message name="HGACheckSoapOut">
+    <wsdl:part name="parameters" element="tns:HGACheckResponse" />
+  </wsdl:message>
+  <wsdl:message name="SliderCheck2SoapIn">
+    <wsdl:part name="parameters" element="tns:SliderCheck2" />
+  </wsdl:message>
+  <wsdl:message name="SliderCheck2SoapOut">
+    <wsdl:part name="parameters" element="tns:SliderCheck2Response" />
+  </wsdl:message>
+  <wsdl:message name="SliderCheckSoapIn">
+    <wsdl:part name="parameters" element="tns:SliderCheck" />
+  </wsdl:message>
+  <wsdl:message name="SliderCheckSoapOut">
+    <wsdl:part name="parameters" element="tns:SliderCheckResponse" />
+  </wsdl:message>
+  <wsdl:message name="CheckHoldSoapIn">
+    <wsdl:part name="parameters" element="tns:CheckHold" />
+  </wsdl:message>
+  <wsdl:message name="CheckHoldSoapOut">
+    <wsdl:part name="parameters" element="tns:CheckHoldResponse" />
+  </wsdl:message>
+  <wsdl:message name="Execute_HoldHolderSoapIn">
+    <wsdl:part name="parameters" element="tns:Execute_HoldHolder" />
+  </wsdl:message>
+  <wsdl:message name="Execute_HoldHolderSoapOut">
+    <wsdl:part name="parameters" element="tns:Execute_HoldHolderResponse" />
+  </wsdl:message>
+  <wsdl:message name="CheckUserSoapIn">
+    <wsdl:part name="parameters" element="tns:CheckUser" />
+  </wsdl:message>
+  <wsdl:message name="CheckUserSoapOut">
+    <wsdl:part name="parameters" element="tns:CheckUserResponse" />
+  </wsdl:message>
+  <wsdl:message name="CheckLoginADSoapIn">
+    <wsdl:part name="parameters" element="tns:CheckLoginAD" />
+  </wsdl:message>
+  <wsdl:message name="CheckLoginADSoapOut">
+    <wsdl:part name="parameters" element="tns:CheckLoginADResponse" />
+  </wsdl:message>
+  <wsdl:message name="CheckEmailSoapIn">
+    <wsdl:part name="parameters" element="tns:CheckEmail" />
+  </wsdl:message>
+  <wsdl:message name="CheckEmailSoapOut">
+    <wsdl:part name="parameters" element="tns:CheckEmailResponse" />
+  </wsdl:message>
+  <wsdl:message name="GetHolderJobSoapIn">
+    <wsdl:part name="parameters" element="tns:GetHolderJob" />
+  </wsdl:message>
+  <wsdl:message name="GetHolderJobSoapOut">
+    <wsdl:part name="parameters" element="tns:GetHolderJobResponse" />
+  </wsdl:message>
+  <wsdl:message name="GetUserPrivilegesSoapIn">
+    <wsdl:part name="parameters" element="tns:GetUserPrivileges" />
+  </wsdl:message>
+  <wsdl:message name="GetUserPrivilegesSoapOut">
+    <wsdl:part name="parameters" element="tns:GetUserPrivilegesResponse" />
+  </wsdl:message>
+  <wsdl:portType name="AutoHoldingSoap">
+    <wsdl:operation name="HelloWorld">
+      <wsdl:input message="tns:HelloWorldSoapIn" />
+      <wsdl:output message="tns:HelloWorldSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="Login">
+      <wsdl:input message="tns:LoginSoapIn" />
+      <wsdl:output message="tns:LoginSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="HGAWIPCheck">
+      <wsdl:input message="tns:HGAWIPCheckSoapIn" />
+      <wsdl:output message="tns:HGAWIPCheckSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="HGACheck">
+      <wsdl:input message="tns:HGACheckSoapIn" />
+      <wsdl:output message="tns:HGACheckSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="SliderCheck2">
+      <wsdl:input message="tns:SliderCheck2SoapIn" />
+      <wsdl:output message="tns:SliderCheck2SoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="SliderCheck">
+      <wsdl:input message="tns:SliderCheckSoapIn" />
+      <wsdl:output message="tns:SliderCheckSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="CheckHold">
+      <wsdl:input message="tns:CheckHoldSoapIn" />
+      <wsdl:output message="tns:CheckHoldSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="Execute_HoldHolder">
+      <wsdl:input message="tns:Execute_HoldHolderSoapIn" />
+      <wsdl:output message="tns:Execute_HoldHolderSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="CheckUser">
+      <wsdl:input message="tns:CheckUserSoapIn" />
+      <wsdl:output message="tns:CheckUserSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="CheckLoginAD">
+      <wsdl:input message="tns:CheckLoginADSoapIn" />
+      <wsdl:output message="tns:CheckLoginADSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="CheckEmail">
+      <wsdl:input message="tns:CheckEmailSoapIn" />
+      <wsdl:output message="tns:CheckEmailSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="GetHolderJob">
+      <wsdl:input message="tns:GetHolderJobSoapIn" />
+      <wsdl:output message="tns:GetHolderJobSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="GetUserPrivileges">
+      <wsdl:input message="tns:GetUserPrivilegesSoapIn" />
+      <wsdl:output message="tns:GetUserPrivilegesSoapOut" />
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="AutoHoldingSoap" type="tns:AutoHoldingSoap">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="HelloWorld">
+      <soap:operation soapAction="http://tempuri.org/HelloWorld" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Login">
+      <soap:operation soapAction="http://tempuri.org/Login" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="HGAWIPCheck">
+      <soap:operation soapAction="http://tempuri.org/HGAWIPCheck" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="HGACheck">
+      <soap:operation soapAction="http://tempuri.org/HGACheck" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SliderCheck2">
+      <soap:operation soapAction="http://tempuri.org/SliderCheck2" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SliderCheck">
+      <soap:operation soapAction="http://tempuri.org/SliderCheck" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckHold">
+      <soap:operation soapAction="http://tempuri.org/CheckHold" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Execute_HoldHolder">
+      <soap:operation soapAction="http://tempuri.org/Execute_HoldHolder" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckUser">
+      <soap:operation soapAction="http://tempuri.org/CheckUser" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckLoginAD">
+      <soap:operation soapAction="http://tempuri.org/CheckLoginAD" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckEmail">
+      <soap:operation soapAction="http://tempuri.org/CheckEmail" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetHolderJob">
+      <soap:operation soapAction="http://tempuri.org/GetHolderJob" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetUserPrivileges">
+      <soap:operation soapAction="http://tempuri.org/GetUserPrivileges" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="AutoHoldingSoap12" type="tns:AutoHoldingSoap">
+    <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="HelloWorld">
+      <soap12:operation soapAction="http://tempuri.org/HelloWorld" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Login">
+      <soap12:operation soapAction="http://tempuri.org/Login" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="HGAWIPCheck">
+      <soap12:operation soapAction="http://tempuri.org/HGAWIPCheck" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="HGACheck">
+      <soap12:operation soapAction="http://tempuri.org/HGACheck" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SliderCheck2">
+      <soap12:operation soapAction="http://tempuri.org/SliderCheck2" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SliderCheck">
+      <soap12:operation soapAction="http://tempuri.org/SliderCheck" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckHold">
+      <soap12:operation soapAction="http://tempuri.org/CheckHold" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="Execute_HoldHolder">
+      <soap12:operation soapAction="http://tempuri.org/Execute_HoldHolder" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckUser">
+      <soap12:operation soapAction="http://tempuri.org/CheckUser" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckLoginAD">
+      <soap12:operation soapAction="http://tempuri.org/CheckLoginAD" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CheckEmail">
+      <soap12:operation soapAction="http://tempuri.org/CheckEmail" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetHolderJob">
+      <soap12:operation soapAction="http://tempuri.org/GetHolderJob" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetUserPrivileges">
+      <soap12:operation soapAction="http://tempuri.org/GetUserPrivileges" style="document" />
+      <wsdl:input>
+        <soap12:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap12:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="AutoHolding">
+    <wsdl:port name="AutoHoldingSoap" binding="tns:AutoHoldingSoap">
+      <soap:address location="http://pbt-mt-ahsapp01:1010/AutoHolding.asmx" />
+    </wsdl:port>
+    <wsdl:port name="AutoHoldingSoap12" binding="tns:AutoHoldingSoap12">
+      <soap12:address location="http://pbt-mt-ahsapp01:1010/AutoHolding.asmx" />
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

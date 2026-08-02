@@ -9,13 +9,15 @@ namespace WDC_STACKER.API.Aggregate
     public class StackerAggregate
     {
         private readonly FeatsService _featsService;
+        private readonly AhsService _ahsService;
         private readonly FeatsCredentialStore _credentialStore;
         private readonly CapacityConfigService _capacityConfigService;
         private readonly StackerSqlService _stackerSqlService;
 
-        public StackerAggregate(FeatsService featsService, FeatsCredentialStore credentialStore, CapacityConfigService capacityConfigService, StackerSqlService stackerSqlService)
+        public StackerAggregate(FeatsService featsService, AhsService ahsService, FeatsCredentialStore credentialStore, CapacityConfigService capacityConfigService, StackerSqlService stackerSqlService)
         {
             _featsService = featsService;
+            _ahsService = ahsService;
             _credentialStore = credentialStore;
             _capacityConfigService = capacityConfigService;
             _stackerSqlService = stackerSqlService;
@@ -657,13 +659,15 @@ namespace WDC_STACKER.API.Aggregate
 
             // 4. FGI Box identity requires PartNum and ProductName.
             // If PartNumber is missing, MoveOut to RBF2 and apply Hold.
-            if (isFgi && string.IsNullOrWhiteSpace(partNumber))
+            if (isFgi &&
+                (string.IsNullOrWhiteSpace(partNumber) ||
+                 string.IsNullOrWhiteSpace(productName)))
             {
                 // MoveOut to RBF2
                 var moveOutResult = await _featsService.MoveOutAsync(
                     holder: holder,
                     holderType: null,
-                    resource: "RBF2",
+                    resource: "735617 RBF2",
                     nextOp: null,
                     username: credentials.Username,
                     password: credentials.Password);
@@ -675,7 +679,7 @@ namespace WDC_STACKER.API.Aggregate
                         Success = false,
                         CanAssign = false,
                         Holder = holder,
-                        Message = $"MoveOut to RBF2 failed: {moveOutResult.Message}",
+                        Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
                         HolderJob = row,
                         RawQueryResult = holderJobResult
                     };
@@ -715,7 +719,7 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     CanAssign = false,
                     Holder = holder,
-                    Message = "PartNumber is missing. Holder has been moved out to RBF2 and held with reason TAP.",
+                    Message = "PartNumber is missing. Holder has been moved out to RBF2 and held with reason TAP: NO PART NUMBER.",
                     HolderJob = row,
                     RawQueryResult = holderJobResult
                 };
@@ -729,6 +733,96 @@ namespace WDC_STACKER.API.Aggregate
                     CanAssign = false,
                     Holder = holder,
                     Message = "ProductName is missing.",
+                    HolderJob = row,
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            // 5. BinName must be exactly 5 characters for FGI.
+            // If not, MoveOut to RBF2.
+            if (isFgi && binName?.Length != 5)
+            {
+                var moveOutResult = await _featsService.MoveOutAsync(
+                    holder: holder,
+                    holderType: null,
+                    resource: "735617 RBF2",
+                    nextOp: null,
+                    username: credentials.Username,
+                    password: credentials.Password);
+
+                if (!moveOutResult.Success)
+                {
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                return new ScanHolderJobResponse
+                {
+                    Success = false,
+                    CanAssign = false,
+                    Holder = holder,
+                    Message = $"BinName must be exactly 5 characters. Current BinName: '{binName}'. Holder has been moved out to RBF2.",
+                    HolderJob = row,
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            // 6. Check if holder has hold using AHS SliderCheck2
+            // If holder has hold, MoveOut to RBF2
+            var sliderCheckResult = await _ahsService.SliderCheck2Async(
+                holder: holder,
+                operation: operation,
+                checkExist: true);
+
+            if (!sliderCheckResult.Success)
+            {
+                return new ScanHolderJobResponse
+                {
+                    Success = false,
+                    CanAssign = false,
+                    Holder = holder,
+                    Message = $"AHS SliderCheck2 failed: {sliderCheckResult.Message}",
+                    HolderJob = row,
+                    RawQueryResult = holderJobResult
+                };
+            }
+
+            if (sliderCheckResult.HasSliderIssue)
+            {
+                var moveOutResult = await _featsService.MoveOutAsync(
+                    holder: holder,
+                    holderType: null,
+                    resource: "735617 RBF2",
+                    nextOp: null,
+                    username: credentials.Username,
+                    password: credentials.Password);
+
+                if (!moveOutResult.Success)
+                {
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                return new ScanHolderJobResponse
+                {
+                    Success = false,
+                    CanAssign = false,
+                    Holder = holder,
+                    Message = $"Holder has hold/slider issue. AHS response: {sliderCheckResult.Message}. Holder has been moved out to RBF2.",
                     HolderJob = row,
                     RawQueryResult = holderJobResult
                 };

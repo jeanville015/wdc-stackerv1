@@ -33,6 +33,7 @@ builder.Services.AddScoped<ActiveDirectoryService>();
 builder.Services.AddScoped<AuthProjectionAggregate>();
 
 builder.Services.AddScoped<FeatsService>();
+builder.Services.AddScoped<AhsService>();
 builder.Services.AddScoped<UserPrivilegesService>();
 builder.Services.AddScoped<StackerAggregate>();
 builder.Services.AddScoped<JwtTokenService>();
