@@ -1534,194 +1534,6 @@ public class StackerSqlService
                     1;
             END;
 
-            DECLARE @MaximumTotalQty bigint =
-                CONVERT(bigint, @RequestTotal) +
-                CONVERT(bigint, @TOLERANCE);
-
-            DECLARE @ComputedIncluded TABLE
-            (
-                [HolderKey] varchar(50) NOT NULL PRIMARY KEY
-            );
-
-            ;WITH OrderedCandidates AS
-            (
-                SELECT
-                    ROW_NUMBER() OVER
-                    (
-                        ORDER BY
-                            CASE
-                                WHEN HA.[UPDATETS] IS NULL
-                                    THEN 1
-                                ELSE 0
-                            END,
-                            HA.[UPDATETS] ASC,
-                            HA.[HOLDER] ASC
-                    ) AS [RowNumber],
-                    UPPER(
-                        LTRIM(RTRIM(HA.[HOLDER]))
-                    ) AS [HOLDER],
-                    CONVERT(
-                        bigint,
-                        ISNULL(HA.[QTY], 0)
-                    ) AS [QTY],
-                    HA.[UPDATETS]
-                FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
-                    WITH (UPDLOCK, HOLDLOCK)
-                WHERE UPPER(
-                        LTRIM(
-                            RTRIM(
-                                ISNULL(HA.[PROCESS], '')
-                            )
-                        )
-                    ) = 'FGI'
-                    AND UPPER(
-                        LTRIM(
-                            RTRIM(
-                                ISNULL(HA.[LEC], '')
-                            )
-                        )
-                    ) =
-                    UPPER(LTRIM(RTRIM(@RequestLec)))
-                    AND
-                    (
-                        NULLIF(
-                            LTRIM(RTRIM(HA.[PENNUM])),
-                            ''
-                        ) IS NULL
-                        OR
-                        (
-                            @RequestPenNum IS NOT NULL
-                            AND UPPER(
-                                LTRIM(RTRIM(HA.[PENNUM]))
-                            ) =
-                            UPPER(
-                                LTRIM(
-                                    RTRIM(@RequestPenNum)
-                                )
-                            )
-                        )
-                    )
-                    AND NULLIF(
-                        LTRIM(RTRIM(HA.[HOLDER])),
-                        ''
-                    ) IS NOT NULL
-                    AND ISNULL(HA.[QTY], 0) > 0
-            ),
-            FifoSelection AS
-            (
-                SELECT
-                    Candidate.[RowNumber],
-                    Candidate.[HOLDER],
-                    Candidate.[QTY],
-                    Candidate.[UPDATETS],
-                    CAST(
-                        CASE
-                            WHEN @RequestTotal > 0
-                                AND Candidate.[QTY] <=
-                                    @MaximumTotalQty
-                            THEN Candidate.[QTY]
-                            ELSE 0
-                        END
-                        AS bigint
-                    ) AS [RunningTotal],
-                    CAST(
-                        CASE
-                            WHEN @RequestTotal > 0
-                                AND Candidate.[QTY] <=
-                                    @MaximumTotalQty
-                            THEN 1
-                            ELSE 0
-                        END
-                        AS bit
-                    ) AS [IsIncluded]
-                FROM OrderedCandidates Candidate
-                WHERE Candidate.[RowNumber] = 1
-
-                UNION ALL
-
-                SELECT
-                    Candidate.[RowNumber],
-                    Candidate.[HOLDER],
-                    Candidate.[QTY],
-                    Candidate.[UPDATETS],
-                    CAST(
-                        CASE
-                            WHEN Selected.[RunningTotal] <
-                                    CONVERT(
-                                        bigint,
-                                        @RequestTotal
-                                    )
-                                AND Candidate.[QTY] <=
-                                    @MaximumTotalQty -
-                                    Selected.[RunningTotal]
-                            THEN
-                                Selected.[RunningTotal] +
-                                Candidate.[QTY]
-                            ELSE
-                                Selected.[RunningTotal]
-                        END
-                        AS bigint
-                    ) AS [RunningTotal],
-                    CAST(
-                        CASE
-                            WHEN Selected.[RunningTotal] <
-                                    CONVERT(
-                                        bigint,
-                                        @RequestTotal
-                                    )
-                                AND Candidate.[QTY] <=
-                                    @MaximumTotalQty -
-                                    Selected.[RunningTotal]
-                            THEN 1
-                            ELSE 0
-                        END
-                        AS bit
-                    ) AS [IsIncluded]
-                FROM FifoSelection Selected
-                INNER JOIN OrderedCandidates Candidate
-                    ON Candidate.[RowNumber] =
-                        Selected.[RowNumber] + 1
-            )
-            INSERT INTO @ComputedIncluded ([HolderKey])
-            SELECT DISTINCT [HOLDER]
-            FROM FifoSelection
-            WHERE [IsIncluded] = 1
-            OPTION (MAXRECURSION 0);
-
-            /*
-             * Abort if the list displayed in the modal is stale.
-             * No delete has happened at this point.
-             */
-            IF
-            (
-                EXISTS
-                (
-                    SELECT [HolderKey]
-                    FROM @ExpectedHolders
-
-                    EXCEPT
-
-                    SELECT [HolderKey]
-                    FROM @ComputedIncluded
-                )
-                OR
-                EXISTS
-                (
-                    SELECT [HolderKey]
-                    FROM @ComputedIncluded
-
-                    EXCEPT
-
-                    SELECT [HolderKey]
-                    FROM @ExpectedHolders
-                )
-            )
-            BEGIN
-                THROW 51012,
-                    'The Included in Total Qty list changed. Close and reopen the disassociation details.',
-                    1;
-            END;
-
             DECLARE @DeletedAssignments TABLE
             (
                 [BOXNO] varchar(50) NULL,
@@ -1730,8 +1542,12 @@ public class StackerSqlService
             );
 
             /*
-             * Stage 1: hard delete the Included Holders.
-             * Do not add a STATUS = RELEASE condition.
+             * Stage 1: hard delete the server-confirmed Included Holders
+             * (the FIFO + Check Hold decision already happened when the
+             * disassociation preview was loaded; this step trusts that
+             * confirmed list rather than re-deriving it here, since holds
+             * cannot be re-checked from SQL). Do not add a
+             * STATUS = RELEASE condition.
              */
             DELETE HA
             OUTPUT
@@ -1745,8 +1561,8 @@ public class StackerSqlService
                 [QTY]
             )
             FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
-            INNER JOIN @ComputedIncluded Included
-                ON Included.[HolderKey] =
+            INNER JOIN @ExpectedHolders Expected
+                ON Expected.[HolderKey] =
                     UPPER(LTRIM(RTRIM(HA.[HOLDER])))
             WHERE UPPER(
                     LTRIM(
@@ -1781,8 +1597,20 @@ public class StackerSqlService
                             )
                         )
                     )
-                );
+                )
+                AND NULLIF(
+                    LTRIM(RTRIM(HA.[HOLDER])),
+                    ''
+                ) IS NOT NULL
+                AND ISNULL(HA.[QTY], 0) > 0;
 
+            /*
+             * Integrity check only: every confirmed Holder must still
+             * exist and qualify (FGI / LEC / PENNUM / QTY > 0). This does
+             * NOT re-derive which holders should be included (that
+             * decision, including hold checks, already happened
+             * server-side when the preview was confirmed).
+             */
             IF
             (
                 SELECT COUNT(*)
@@ -1790,7 +1618,7 @@ public class StackerSqlService
             ) <>
             (
                 SELECT COUNT(*)
-                FROM @ComputedIncluded
+                FROM @ExpectedHolders
             )
             BEGIN
                 THROW 51013,
@@ -1936,12 +1764,6 @@ public class StackerSqlService
                     SqlDbType.BigInt)
                 .Value = requestId;
 
-            command.Parameters
-                .Add(
-                    "@TOLERANCE",
-                    SqlDbType.Int)
-                .Value = FgiWithdrawalQtyTolerance;
-
             for (
                 var index = 0;
                 index < holderKeys.Length;
@@ -1991,7 +1813,6 @@ public class StackerSqlService
                 exception.Number is
                     51010 or
                     51011 or
-                    51012 or
                     51013)
         {
             await transaction.RollbackAsync();

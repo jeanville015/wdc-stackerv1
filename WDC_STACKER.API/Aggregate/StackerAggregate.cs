@@ -14,14 +14,16 @@ namespace WDC_STACKER.API.Aggregate
         private readonly FeatsCredentialStore _credentialStore;
         private readonly CapacityConfigService _capacityConfigService;
         private readonly StackerSqlService _stackerSqlService;
+        private readonly ILogger<StackerAggregate> _logger;
 
-        public StackerAggregate(FeatsService featsService, AhsService ahsService, FeatsCredentialStore credentialStore, CapacityConfigService capacityConfigService, StackerSqlService stackerSqlService)
+        public StackerAggregate(FeatsService featsService, AhsService ahsService, FeatsCredentialStore credentialStore, CapacityConfigService capacityConfigService, StackerSqlService stackerSqlService, ILogger<StackerAggregate> logger)
         {
             _featsService = featsService;
             _ahsService = ahsService;
             _credentialStore = credentialStore;
             _capacityConfigService = capacityConfigService;
             _stackerSqlService = stackerSqlService;
+            _logger = logger;
 
         }
 
@@ -897,6 +899,7 @@ namespace WDC_STACKER.API.Aggregate
                 var moveInResult = await _featsService.MoveInAsync(
                     holder: holder,
                     holderType: null,
+                    resource: null,
                     username: credentials.Username,
                     password: credentials.Password);
 
@@ -1823,9 +1826,33 @@ namespace WDC_STACKER.API.Aggregate
             }
             //-- ADD JOB TRANSACTION: END ---------------------------------------------------//
 
-            // PENDING: MoveOut() FEATS transaction using `shippingId` will
-            // be wired in here, before the SQL update below.
-            // See JOB_WITHDRAWAL_CHANGES.md.
+            //-- MOVE-OUT TRANSACTION: START ------------------------------------------------\\
+            if (!_credentialStore.TryGet(token, out var moveOutCredentials))
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = "Invalid or expired token."
+                };
+            }
+
+            var moveOutResult = await _featsService.MoveOutAsync(
+                holder: shippingId,
+                holderType: null,
+                resource: null,
+                nextOp: null,
+                username: moveOutCredentials.Username,
+                password: moveOutCredentials.Password);
+
+            if (!moveOutResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = moveOutResult.Message
+                };
+            }
+            //-- MOVE-OUT TRANSACTION: END --------------------------------------------------//
 
             var result = await _stackerSqlService
                 .DisassociateFgiWithdrawalAsync(
