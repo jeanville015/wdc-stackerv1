@@ -552,7 +552,8 @@ namespace WDC_STACKER.API.Aggregate
                 "Workflow",
                 "WaferNum",
                 "HoldReason",
-                "HoldComment"
+                "HoldComment",
+                "InProcess"
             };
 
             if (isFgi)
@@ -616,6 +617,7 @@ namespace WDC_STACKER.API.Aggregate
             var binName = GetField(row, "BinName");
             var holdReason = GetField(row, "HoldReason");
             var holdComment = GetField(row, "HoldComment");
+            var inProcess = GetField(row, "InProcess");
 
             // 1. Operation must match config.ValidOperation
             if (!string.Equals(operation, config.ValidOperation, StringComparison.OrdinalIgnoreCase))
@@ -885,6 +887,35 @@ namespace WDC_STACKER.API.Aggregate
                     HolderJob = row,
                     RawQueryResult = holderJobResult
                 };
+            }
+
+            // 7. InProcess Validation (Last validation)
+            // If InProcess is not "True", perform MoveIn then continue
+            if (!string.Equals(inProcess, "True", StringComparison.OrdinalIgnoreCase))
+            {
+                var moveInResult = await _featsService.MoveInAsync(
+                    holder: holder,
+                    holderType: null,
+                    username: credentials.Username,
+                    password: credentials.Password);
+
+                if (!moveInResult.Success)
+                {
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"MoveIn failed: {moveInResult.Message}",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                _logger.LogInformation(
+                    "MoveIn successful for holder={Holder} with InProcess={InProcess}",
+                    holder,
+                    inProcess);
             }
 
             HolderAssignInsertData? suggestionData = null;
