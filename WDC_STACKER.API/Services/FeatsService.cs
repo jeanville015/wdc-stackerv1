@@ -248,6 +248,40 @@ namespace WDC_STACKER.API.Services
         }
 
         /// <summary>
+        /// Groups <paramref name="newHolders"/> under <paramref name="holder"/>
+        /// (the entered Shipping Id) via the FEATS AddJob transaction.
+        /// </summary>
+        /// <param name="holder"></param>
+        /// <param name="holderType"></param>
+        /// <param name="newHolders"></param>
+        /// <param name="allowMixingJobAttributes"></param>
+        /// <param name="username"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public async Task<(bool Success, string Message)> AddJobAsync(string holder, string holderType, FeatsServiceReference.child_holder_info[] newHolders, bool allowMixingJobAttributes, string username, string password)
+        {
+            _logger.LogInformation("FEATS AddJob -> holder={Holder}, holderType={HolderType}, newHolderCount={NewHolderCount}", holder, holderType, newHolders.Length);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password);
+                await client.AddJobAsync(holder, holderType, newHolders, allowMixingJobAttributes);
+                return (true, "FEATS AddJob completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS AddJob failed for holder={Holder}", holder);
+                return (false, $"FEATS AddJob failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// The ! operators only suppress nullable-reference warnings.
         /// The actual runtime values remain null. The WSDL marks HolderType
         /// with minOccurs="0", although the FEATS server may still apply its own business validation.

@@ -1,4 +1,5 @@
 ﻿
+using FeatsServiceReference;
 using WDC_STACKER.API.Models;
 using WDC_STACKER.API.Models.Feats;
 using WDC_STACKER.API.Models.Stacker;
@@ -1753,6 +1754,35 @@ namespace WDC_STACKER.API.Aggregate
             return (true, "ShipBox verification bypassed (not yet implemented).");
         }
 
+        /// <summary>
+        /// "AddJob()" FEATS transaction of the Job Withdrawal flow: groups
+        /// the verified withdrawal holders under the entered Shipping Id.
+        /// </summary>
+        private async Task<(bool Success, string Message)> AddJobForWithdrawalAsync(string shippingId, IReadOnlyList<string> holders, string token)
+        {
+            if (!_credentialStore.TryGet(token, out var credentials))
+            {
+                return (false, "Invalid or expired token.");
+            }
+
+            var newHolders = holders
+                .Select((holder, index) => new child_holder_info
+                {
+                    Position = index + 1,
+                    Name = holder,
+                    Type = "MATTRA"
+                })
+                .ToArray();
+
+            return await _featsService.AddJobAsync(
+                holder: shippingId,
+                holderType: "SHPBOX",
+                newHolders: newHolders,
+                allowMixingJobAttributes: true,
+                username: credentials.Username,
+                password: credentials.Password);
+        }
+
         public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, string shippingId, IReadOnlyCollection<string> includedHolders, string token)
         {
             if (!_credentialStore.TryGet(token, out _))
@@ -1777,9 +1807,25 @@ namespace WDC_STACKER.API.Aggregate
             }
             //-- VERIFY SHIPBOX: END ------------------------------------------------------//
 
-            // PENDING: AddJob() and MoveOut() FEATS transactions using
-            // `shippingId` will be wired in here, before the SQL update
-            // below. See JOB_WITHDRAWAL_CHANGES.md.
+            //-- ADD JOB TRANSACTION: START -----------------------------------------------\\
+            var addJobResult = await AddJobForWithdrawalAsync(
+                shippingId,
+                includedHolders.ToList(),
+                token);
+
+            if (!addJobResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = addJobResult.Message
+                };
+            }
+            //-- ADD JOB TRANSACTION: END ---------------------------------------------------//
+
+            // PENDING: MoveOut() FEATS transaction using `shippingId` will
+            // be wired in here, before the SQL update below.
+            // See JOB_WITHDRAWAL_CHANGES.md.
 
             var result = await _stackerSqlService
                 .DisassociateFgiWithdrawalAsync(
