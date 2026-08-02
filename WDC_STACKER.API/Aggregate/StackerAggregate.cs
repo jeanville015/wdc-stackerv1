@@ -1660,7 +1660,28 @@ namespace WDC_STACKER.API.Aggregate
             );
         }
 
-        public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, IReadOnlyCollection<string> includedHolders, string token)
+        /// <summary>
+        /// "Verify ShipBox" step of the Job Withdrawal flow, run right after
+        /// "Enter Shipping Box Allocation". Intended to validate that the
+        /// entered Shipping Id is valid before continuing; if invalid, the
+        /// UI should return the user to the Shipping Id input.
+        ///
+        /// STUBBED/BYPASSED per request: always passes (aside from a
+        /// non-empty check) until the real validation rule is provided. See
+        /// JOB_WITHDRAWAL_CHANGES.md.
+        /// </summary>
+        private (bool Success, string Message) VerifyShipBox(string shippingId)
+        {
+            if (string.IsNullOrWhiteSpace(shippingId))
+            {
+                return (false, "ShippingId is required.");
+            }
+
+            // TODO: implement real ShipBox verification. Bypassed for now.
+            return (true, "ShipBox verification bypassed (not yet implemented).");
+        }
+
+        public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, string shippingId, IReadOnlyCollection<string> includedHolders, string token)
         {
             if (!_credentialStore.TryGet(token, out _))
             {
@@ -1671,10 +1692,39 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            return await _stackerSqlService
+            //-- VERIFY SHIPBOX: START (bypassed) ----------------------------------------\\
+            var shipBoxCheck = VerifyShipBox(shippingId);
+
+            if (!shipBoxCheck.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = shipBoxCheck.Message
+                };
+            }
+            //-- VERIFY SHIPBOX: END ------------------------------------------------------//
+
+            // PENDING: AddJob() and MoveOut() FEATS transactions using
+            // `shippingId` will be wired in here, before the SQL update
+            // below. See JOB_WITHDRAWAL_CHANGES.md.
+
+            var result = await _stackerSqlService
                 .DisassociateFgiWithdrawalAsync(
                     requestId,
                     includedHolders);
+
+            if (!result.Success)
+            {
+                return result;
+            }
+
+            //-- SEND EMAIL: START (placeholder) ------------------------------------------\\
+            // TODO: send withdrawal completion email to HGA/FGI for
+            // requestId (not yet implemented). See JOB_WITHDRAWAL_CHANGES.md.
+            //-- SEND EMAIL: END -----------------------------------------------------------//
+
+            return result;
         }
 
         public async Task<(bool Success, string Message, string AcknowledgeBy)> AcknowledgeFgiWithdrawalRequestAsync(long requestId, string token)

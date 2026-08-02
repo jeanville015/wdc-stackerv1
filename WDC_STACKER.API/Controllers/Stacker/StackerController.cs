@@ -105,7 +105,10 @@ namespace WDC_STACKER.API.Controllers.Stacker
         }
 
         [HttpGet("boxes/{boxNo}/shipboxes")]
-        public async Task<IActionResult> GetShipBoxes(string boxNo, [FromQuery] bool suggest = false)
+        public async Task<IActionResult> GetShipBoxes(
+            string boxNo,
+            [FromQuery] bool suggest = false,
+            [FromQuery] string? lec = null)
         {
             var token = GetBearerToken(Request);
 
@@ -117,7 +120,14 @@ namespace WDC_STACKER.API.Controllers.Stacker
             if (string.IsNullOrWhiteSpace(boxNo))
                 return BadRequest(new { message = "BoxNo is required." });
 
-            var shipBoxes = await _aggregate.GetShipBoxesAsync(boxNo.Trim(), suggest, GetClientKey());
+            var hasLecContext = Request.Query.ContainsKey("lec");
+
+            var shipBoxes = await _aggregate.GetShipBoxesAsync(
+                boxNo.Trim(),
+                suggest,
+                GetClientKey(),
+                lec,
+                hasLecContext);
 
             return Ok(shipBoxes);
         }
@@ -157,7 +167,245 @@ namespace WDC_STACKER.API.Controllers.Stacker
 
             return Ok(assignments);
         }
-         
+
+        [HttpGet("withdrawal/requests")]
+        public async Task<IActionResult> GetFgiWithdrawalRequests()
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            var requests = await _aggregate.GetFgiWithdrawalRequestsAsync();
+            return Ok(requests);
+        }
+
+        [HttpGet("withdrawal/disassociation-preview")]
+        public async Task<IActionResult> GetFgiWithdrawalDisassociationPreview([FromQuery] string lec, [FromQuery] string? penNum, [FromQuery] int? total)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(
+                    new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrWhiteSpace(lec))
+            {
+                return BadRequest(
+                    new { message = "LEC is required." });
+            }
+
+            if (!total.HasValue || total.Value < 0)
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "TOTAL is required and cannot be negative."
+                });
+            }
+
+            var result = await _aggregate.GetFgiWithdrawalDisassociationPreviewAsync(lec.Trim(), string.IsNullOrWhiteSpace(penNum) ? null : penNum.Trim(), total.Value, token);
+
+            if (!result.Success || result.Preview is null)
+            {
+                if (result.Message.Contains(
+                        "token",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return Unauthorized(
+                        new { message = result.Message });
+                }
+
+                return StatusCode(
+                    StatusCodes.Status502BadGateway,
+                    new { message = result.Message });
+            }
+
+            return Ok(result.Preview);
+        }
+
+        [HttpPost( "withdrawal/requests/{requestId:long}/disassociate")]
+        public async Task<IActionResult> DisassociateFgiWithdrawalRequest( long requestId, [FromBody] FgiWithdrawalDisassociationRequest? request)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(
+                    new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (requestId <= 0)
+            {
+                return BadRequest(
+                    new { message = "RequestId is required." });
+            }
+
+            if (string.IsNullOrWhiteSpace(request?.ShippingId))
+            {
+                return BadRequest(
+                    new { message = "ShippingId is required." });
+            }
+
+            if (request?.IncludedHolders is null ||
+                request.IncludedHolders.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "At least one included Holder is required."
+                });
+            }
+
+            if (request.IncludedHolders.Count > 2000)
+            {
+                return BadRequest(
+                    new { message = "Too many included Holders." });
+            }
+
+            if (request.IncludedHolders.Any(
+                    holder =>
+                        string.IsNullOrWhiteSpace(holder) ||
+                        holder.Trim().Length > 50))
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "Every Holder is required and cannot exceed 50 characters."
+                });
+            }
+
+            if (request.IncludedHolders
+                    .Select(holder => holder.Trim())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count() !=
+                request.IncludedHolders.Count)
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "The included Holder list contains duplicates."
+                });
+            }
+
+            var result =
+                await _aggregate
+                    .DisassociateFgiWithdrawalRequestAsync(
+                        requestId,
+                        request.ShippingId.Trim(),
+                        request.IncludedHolders,
+                        token);
+
+            if (!result.Success)
+            {
+                return Conflict(
+                    new { message = result.Message });
+            }
+
+            return Ok(result);
+        }
+
+        [HttpPatch("withdrawal/requests/{requestId:long}/acknowledge")]
+        public async Task<IActionResult> AcknowledgeFgiWithdrawalRequest(long requestId)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (requestId <= 0)
+                return BadRequest(new { message = "RequestId is required." });
+
+            var result =
+                await _aggregate.AcknowledgeFgiWithdrawalRequestAsync(
+                    requestId,
+                    token);
+
+            if (!result.Success)
+                return Conflict(new { message = result.Message });
+
+            return Ok(new
+            {
+                result.Success,
+                result.Message,
+                result.AcknowledgeBy
+            });
+        }
+
+        [HttpGet("withdrawal/layout")]
+        public async Task<IActionResult> GetFgiWithdrawalLayout([FromQuery] string lec)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrWhiteSpace(lec))
+                return BadRequest(new { message = "LEC is required." });
+
+            var layout = await _aggregate.GetFgiWithdrawalLayoutAsync(
+                lec.Trim(),
+                GetClientKey());
+
+            if (layout is null)
+                return NoContent();
+
+            return Ok(layout);
+        }
+
         [HttpDelete("assignments")]
         public async Task<IActionResult> Disassociate( [FromBody] DisassociateHolderRequest request)
         {
