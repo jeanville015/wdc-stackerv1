@@ -16,6 +16,7 @@ namespace WDC_STACKER.API.Models
         public int TARGET_QTY { get; set; }
         public int TARGET_TRAY_COUNT { get; set; }
         public string ValidOperation { get; set; } = string.Empty;
+        public List<string> HoldValidationOperations { get; set; } = new();
         public int FJ { get; set; }
         public int FD { get; set; }
         public int FS { get; set; }

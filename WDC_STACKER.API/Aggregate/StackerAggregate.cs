@@ -550,7 +550,9 @@ namespace WDC_STACKER.API.Aggregate
                 "ParentHolder",
                 "Routing",
                 "Workflow",
-                "WaferNum"
+                "WaferNum",
+                "HoldReason",
+                "HoldComment"
             };
 
             if (isFgi)
@@ -612,6 +614,8 @@ namespace WDC_STACKER.API.Aggregate
             var productName = GetField(row, "ProductName");
             var buildCode = GetField(row, "BuildCode");
             var binName = GetField(row, "BinName");
+            var holdReason = GetField(row, "HoldReason");
+            var holdComment = GetField(row, "HoldComment");
 
             // 1. Operation must match config.ValidOperation
             if (!string.Equals(operation, config.ValidOperation, StringComparison.OrdinalIgnoreCase))
@@ -774,58 +778,100 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            // 6. Check if holder has hold using AHS SliderCheck2
-            // If holder has hold, MoveOut to RBF2
-            var sliderCheckResult = await _ahsService.SliderCheck2Async(
-                holder: holder,
-                operation: operation,
-                checkExist: true);
-
-            if (!sliderCheckResult.Success)
+            // 6. Two-step Hold Validation
+            // Step 1: Check FEATS HoldReason and HoldComment
+            // If both are null, holder is free of holds
+            if (!string.IsNullOrWhiteSpace(holdReason) || !string.IsNullOrWhiteSpace(holdComment))
             {
                 return new ScanHolderJobResponse
                 {
                     Success = false,
                     CanAssign = false,
                     Holder = holder,
-                    Message = $"AHS SliderCheck2 failed: {sliderCheckResult.Message}",
+                    Message = $"Holder has FEATS hold. HoldReason: '{holdReason}', HoldComment: '{holdComment}'",
                     HolderJob = row,
                     RawQueryResult = holderJobResult
                 };
             }
 
-            if (sliderCheckResult.HasSliderIssue)
+            // Step 2: Check AHS SliderCheck2 for all operations in config
+            // Loop through each operation and check if holder has hold/slider issue
+            // If any operation returns "EXISTS" or "ONHOLD", fail validation
+            // Only if all operations return "PASSED" does it pass
+            var holdValidationOperations = config.HoldValidationOperations;
+            if (holdValidationOperations == null || holdValidationOperations.Count == 0)
             {
-                var moveOutResult = await _featsService.MoveOutAsync(
-                    holder: holder,
-                    holderType: null,
-                    resource: "735617 RBF2",
-                    nextOp: null,
-                    username: credentials.Username,
-                    password: credentials.Password);
+                // If no operations configured, use the current operation as fallback
+                holdValidationOperations = new List<string> { operation };
+            }
 
-                if (!moveOutResult.Success)
+            foreach (var validationOperation in holdValidationOperations)
+            {
+                var sliderCheckResult = await _ahsService.SliderCheck2Async(
+                    holder: holder,
+                    operation: validationOperation,
+                    checkExist: false);
+
+                if (!sliderCheckResult.Success)
                 {
                     return new ScanHolderJobResponse
                     {
                         Success = false,
                         CanAssign = false,
                         Holder = holder,
-                        Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                        Message = $"AHS SliderCheck2 failed for operation '{validationOperation}': {sliderCheckResult.Message}",
                         HolderJob = row,
                         RawQueryResult = holderJobResult
                     };
                 }
 
-                return new ScanHolderJobResponse
+                // Check if result is EXISTS or ONHOLD - if so, fail validation
+                var responseUpper = sliderCheckResult.RawResponse?.ToUpperInvariant();
+                if (responseUpper == "EXISTS" || responseUpper == "ONHOLD")
                 {
-                    Success = false,
-                    CanAssign = false,
-                    Holder = holder,
-                    Message = $"Holder has hold/slider issue. AHS response: {sliderCheckResult.Message}. Holder has been moved out to RBF2.",
-                    HolderJob = row,
-                    RawQueryResult = holderJobResult
-                };
+                    // MoveOut to RBF2
+                    var moveOutResult = await _featsService.MoveOutAsync(
+                        holder: holder,
+                        holderType: null,
+                        resource: "735617 RBF2",
+                        nextOp: null,
+                        username: credentials.Username,
+                        password: credentials.Password);
+
+                    if (!moveOutResult.Success)
+                    {
+                        return new ScanHolderJobResponse
+                        {
+                            Success = false,
+                            CanAssign = false,
+                            Holder = holder,
+                            Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                            HolderJob = row,
+                            RawQueryResult = holderJobResult
+                        };
+                    }
+
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"Holder has hold/slider issue for operation '{validationOperation}'. AHS response: {sliderCheckResult.RawResponse}. Holder has been moved out to RBF2.",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                // If result is PASSED, continue to next operation
+                // If result is anything else, log it but continue
+                if (responseUpper != "PASSED")
+                {
+                    _logger.LogWarning(
+                        "AHS SliderCheck2 returned unexpected response for holder={Holder}, operation={Operation}: {Response}",
+                        holder,
+                        validationOperation,
+                        sliderCheckResult.RawResponse);
+                }
             }
 
             if (isFgi && !TryGetValidatedHolderQty(row, out _))

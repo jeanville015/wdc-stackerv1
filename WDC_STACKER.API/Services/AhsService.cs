@@ -25,7 +25,7 @@ namespace WDC_STACKER.API.Services
         /// <summary>
         /// Calls AHS SliderCheck2 to check if holder has slider issues
         /// </summary>
-        public async Task<(bool Success, string Message, bool HasSliderIssue)> SliderCheck2Async(string holder, string operation, bool checkExist)
+        public async Task<(bool Success, string Message, string RawResponse)> SliderCheck2Async(string holder, string operation, bool checkExist)
         {
             _logger.LogInformation("AHS SliderCheck2 -> holder={Holder}, operation={Operation}", holder, operation);
 
@@ -34,19 +34,12 @@ namespace WDC_STACKER.API.Services
                 using var client = CreateClient();
                 var result = await client.SliderCheck2Async(holder, operation, checkExist);
                 
-                // Parse the result - assuming the service returns a string indicating pass/fail
-                // You may need to adjust this based on actual AHS response format
-                var hasSliderIssue = !string.IsNullOrWhiteSpace(result) && 
-                    (result.Equals("FAIL", StringComparison.OrdinalIgnoreCase) ||
-                     result.Equals("ERROR", StringComparison.OrdinalIgnoreCase) ||
-                     result.Contains("ERROR", StringComparison.OrdinalIgnoreCase));
-
-                return (true, result, hasSliderIssue);
+                return (true, result, result);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "AHS SliderCheck2 failed for holder={Holder}", holder);
-                return (false, $"AHS SliderCheck2 failed: {ex.Message}", false);
+                return (false, $"AHS SliderCheck2 failed: {ex.Message}", string.Empty);
             }
         }
 
