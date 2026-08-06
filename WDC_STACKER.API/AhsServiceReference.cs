@@ -41,7 +41,7 @@ namespace AhsServiceReference
         {
         }
 
-        #if !NETCOREAPP  // problematic code on BUILD
+#if !NETCOREAPP
         public AutoHoldingSoapClient(string endpointConfigurationName) :
             base(endpointConfigurationName)
         {
@@ -56,7 +56,7 @@ namespace AhsServiceReference
             base(endpointConfigurationName, remoteAddress)
         {
         }
-        #endif
+#endif
 
         public AutoHoldingSoapClient(System.ServiceModel.Channels.Binding binding, System.ServiceModel.EndpointAddress remoteAddress) :
             base(binding, remoteAddress)

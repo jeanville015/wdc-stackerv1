@@ -11,5 +11,6 @@
         public string Username { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
         public bool CanAccessConfiguration { get; set; }
+        public DateTime ExpiresAt { get; set; }
     }
 }

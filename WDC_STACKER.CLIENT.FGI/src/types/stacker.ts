@@ -14,17 +14,26 @@ export interface ShipBoxView {
     IsSuggestedTarget?: boolean;
     BoxNo: string;
     ShipBoxName: string;
+    Lec: string;
     ShipBoxStatus: string;
     ShipBoxNum: number;
     LayerRowNum: number;
     LayerColNum: number;
     ShipBoxListCount: number;
     ShipBoxListPercentage: number;
+    HasHeldHolder?: boolean;
     HasReleaseStatus: boolean;
+    InSiteHoldHolders?: string[];
+    /** Zero-based indexes in the holder-ID ascending assignment order. */
+    InSiteHoldPositions?: number[];
+    HasInSiteHold?: boolean;
 }
 
 export interface BoxView {
     BoxNo: string;
+    PartNum?: string | null;
+    PenNum?: string | null;
+    ProductName?: string | null;
     RackNum: number;
     LayerRowNum: number;
     LayerColNum: number;

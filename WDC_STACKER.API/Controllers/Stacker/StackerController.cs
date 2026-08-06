@@ -127,7 +127,8 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 suggest,
                 GetClientKey(),
                 lec,
-                hasLecContext);
+                hasLecContext,
+                token);
 
             return Ok(shipBoxes);
         }
@@ -192,7 +193,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
         }
 
         [HttpGet("withdrawal/disassociation-preview")]
-        public async Task<IActionResult> GetFgiWithdrawalDisassociationPreview([FromQuery] string lec, [FromQuery] string? penNum, [FromQuery] int? total)
+        public async Task<IActionResult> GetFgiWithdrawalDisassociationPreview([FromQuery] string? lec, [FromQuery] string? penNum, [FromQuery] int? total, [FromQuery] string? partNum, [FromQuery] string? grade, [FromQuery] int? actualOutput)
         {
             var token = GetBearerToken(Request);
 
@@ -211,12 +212,6 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 return Forbid();
             }
 
-            if (string.IsNullOrWhiteSpace(lec))
-            {
-                return BadRequest(
-                    new { message = "LEC is required." });
-            }
-
             if (!total.HasValue || total.Value < 0)
             {
                 return BadRequest(new
@@ -226,7 +221,25 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 });
             }
 
-            var result = await _aggregate.GetFgiWithdrawalDisassociationPreviewAsync(lec.Trim(), string.IsNullOrWhiteSpace(penNum) ? null : penNum.Trim(), total.Value, token, GetClientKey());
+            if (string.IsNullOrWhiteSpace(partNum))
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "PartNum is required."
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(grade))
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "Grade is required."
+                });
+            }
+
+            var result = await _aggregate.GetFgiWithdrawalDisassociationPreviewAsync(string.IsNullOrWhiteSpace(lec) ? null : lec.Trim(), string.IsNullOrWhiteSpace(penNum) ? null : penNum.Trim(), total.Value, string.IsNullOrWhiteSpace(partNum) ? null : partNum.Trim(), string.IsNullOrWhiteSpace(grade) ? null : grade.Trim(), actualOutput ?? 0, token, GetClientKey());
 
             if (!result.Success || result.Preview is null)
             {
@@ -244,6 +257,36 @@ namespace WDC_STACKER.API.Controllers.Stacker
             }
 
             return Ok(result.Preview);
+        }
+
+        [HttpGet("withdrawal/verify-shipbox")]
+        public async Task<IActionResult> VerifyFgiWithdrawalShipBox([FromQuery] string? shippingId)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(
+                    new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrWhiteSpace(shippingId))
+            {
+                return BadRequest(new { message = "ShippingId is required." });
+            }
+
+            var result = await _aggregate.VerifyFgiWithdrawalShipBoxAsync(shippingId.Trim(), token);
+
+            return Ok(new { success = result.Success, message = result.Message });
         }
 
         [HttpPost( "withdrawal/requests/{requestId:long}/disassociate")]
@@ -375,7 +418,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
         }
 
         [HttpGet("withdrawal/layout")]
-        public async Task<IActionResult> GetFgiWithdrawalLayout([FromQuery] string lec)
+        public async Task<IActionResult> GetFgiWithdrawalLayout([FromQuery] string? lec, [FromQuery] string? penNum, [FromQuery] string? partNum, [FromQuery] string? grade)
         {
             var token = GetBearerToken(Request);
 
@@ -393,12 +436,13 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 return Forbid();
             }
 
-            if (string.IsNullOrWhiteSpace(lec))
-                return BadRequest(new { message = "LEC is required." });
-
             var layout = await _aggregate.GetFgiWithdrawalLayoutAsync(
-                lec.Trim(),
-                GetClientKey());
+                string.IsNullOrWhiteSpace(lec) ? null : lec.Trim(),
+                string.IsNullOrWhiteSpace(penNum) ? null : penNum.Trim(),
+                string.IsNullOrWhiteSpace(partNum) ? null : partNum.Trim(),
+                string.IsNullOrWhiteSpace(grade) ? null : grade.Trim(),
+                GetClientKey(),
+                token);
 
             if (layout is null)
                 return NoContent();
@@ -426,6 +470,117 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 result.Message,
                 GridViewBoxes = result.Boxes
             });
+        }
+
+        [HttpDelete("fgi/hold-assignments")]
+        public async Task<IActionResult> DisassociateFgiHolder([FromBody] DisassociateHolderRequest request)
+        {
+            var token = GetBearerToken(Request);
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Bearer token is required." });
+            }
+
+            var result = await _aggregate.DisassociateFgiHolderAsync(request.Holder.Trim(), token, GetClientKey());
+
+            if (!result.Success)
+                return Conflict(new { message = result.Message });
+
+            return Ok(new
+            {
+                result.Success,
+                result.Message,
+                GridViewBoxes = result.Boxes
+            });
+        }
+
+        [HttpGet("boxes")]
+        public async Task<IActionResult> GetBoxes()
+        {
+            var token = GetBearerToken(Request);
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            var result = await _aggregate.MapGridViewBoxData(GetClientKey(), null, token);
+
+            return Ok(new
+            {
+                Success = true,
+                CanAssign = false,
+                Message = result.Message,
+                GridViewBoxes = result.Boxes
+            });
+        }
+
+        [HttpGet("export/csv")]
+        public async Task<IActionResult> ExportCsv()
+        {
+            var token = GetBearerToken(Request);
+            if (string.IsNullOrWhiteSpace(token) || !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(new { message = "Invalid or expired token." });
+            }
+
+            var data = await _aggregate.GetAllHolderAssignmentsForCsvAsync(GetClientKey());
+
+            var csv = GenerateCsv(data);
+
+            // Add UTF-8 BOM for proper Excel encoding recognition
+            var bom = System.Text.Encoding.UTF8.GetPreamble();
+            var csvBytes = System.Text.Encoding.UTF8.GetBytes(csv);
+            var csvWithBom = new byte[bom.Length + csvBytes.Length];
+            Buffer.BlockCopy(bom, 0, csvWithBom, 0, bom.Length);
+            Buffer.BlockCopy(csvBytes, 0, csvWithBom, bom.Length, csvBytes.Length);
+
+            var timestamp = DateTime.Now.ToString("MMM-dd-yyyy_HHmm");
+            var filename = $"{timestamp}_FGI-Stacker_WIP.csv";
+            Response.Headers.Clear();
+            Response.Headers.Append("Content-Type", "text/csv; charset=utf-8");
+            Response.Headers.Append("Content-Disposition", $"attachment; filename={filename}");
+            return File(csvWithBom, "text/csv; charset=utf-8");
+        }
+
+        private string GenerateCsv(List<WDC_STACKER.API.Models.Stacker.CsvExportRow> data)
+        {
+            var headers = new[] { "Holder", "Grade", "BlackBox", "ShipBox", "InsertedOn", "Quantity", "Model", "PartNum", "PenNum", "Lec" };
+            var csv = new System.Text.StringBuilder();
+
+            csv.AppendLine(string.Join(",", headers));
+
+            foreach (var row in data)
+            {
+                var values = new[]
+                {
+                    EscapeCsvField(row.Holder),
+                    EscapeCsvField(row.Grade),
+                    EscapeCsvField(row.BlackBox),
+                    EscapeCsvField(row.ShipBox),
+                    EscapeCsvField(row.InsertedOn),
+                    row.Quantity.ToString(),
+                    EscapeCsvField(row.Model),
+                    EscapeCsvField(row.PartNum),
+                    EscapeCsvField(row.PenNum),
+                    EscapeCsvField(row.Lec)
+                };
+                csv.AppendLine(string.Join(",", values));
+            }
+
+            return csv.ToString();
+        }
+
+        private string EscapeCsvField(string field)
+        {
+            if (string.IsNullOrEmpty(field))
+                return "";
+
+            if (field.Contains(",") || field.Contains("\"") || field.Contains("\n") || field.Contains("\r"))
+            {
+                return $"\"{field.Replace("\"", "\"\"")}\"";
+            }
+
+            return field;
         }
 
     } 

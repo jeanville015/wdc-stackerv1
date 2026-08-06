@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using WDC_STACKER.API.Aggregate;
+using WDC_STACKER.API.Interfaces;
 using WDC_STACKER.API.Services;
 using WDC_STACKER.API.Swagger;
 
@@ -40,6 +41,7 @@ builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddSingleton<CapacityConfigService>();
 builder.Services.AddSingleton<FeatsCredentialStore>();
 builder.Services.AddScoped<StackerSqlService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

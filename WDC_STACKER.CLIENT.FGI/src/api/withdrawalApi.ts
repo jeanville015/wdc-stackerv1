@@ -68,10 +68,19 @@ export async function acknowledgeFgiWithdrawalRequestApi(
 
 export async function getFgiWithdrawalLayoutApi(
     lec: string,
+    penNum: string | undefined,
+    partNum: string | undefined,
+    grade: string | undefined,
     token: string
 ): Promise<FgiWithdrawalRack | null> {
+    const query = new URLSearchParams();
+    if (lec) query.append('lec', lec);
+    if (penNum) query.append('penNum', penNum);
+    if (partNum) query.append('partNum', partNum);
+    if (grade) query.append('grade', grade);
+
     const response = await fetch(
-        `${API_BASE}/api/stacker/withdrawal/layout?lec=${encodeURIComponent(lec)}`,
+        `${API_BASE}/api/stacker/withdrawal/layout?${query.toString()}`,
         { headers: createHeaders(token) }
     );
 
@@ -88,19 +97,51 @@ export async function getFgiWithdrawalLayoutApi(
     return response.json() as Promise<FgiWithdrawalRack | null>;
 }
 
+export async function verifyFgiWithdrawalShipBoxApi(
+    shippingId: string,
+    token: string
+): Promise<{ success: boolean; message: string }> {
+    const query = new URLSearchParams({ shippingId });
+
+    const response = await fetch(
+        `${API_BASE}/api/stacker/withdrawal/verify-shipbox?${query.toString()}`,
+        { headers: createHeaders(token) }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            await readError(response, "Unable to verify the ShippingId.")
+        );
+    }
+
+    return response.json() as Promise<{ success: boolean; message: string }>;
+}
+
 export async function getFgiWithdrawalDisassociationPreviewApi(
     lec: string,
     penNum: string,
     total: number,
+    partNum: string,
+    grade: string,
+    actualOutput: number,
     token: string
 ): Promise<FgiWithdrawalDisassociationPreview> {
     const query = new URLSearchParams({
         lec,
         total: String(total),
+        actualOutput: String(actualOutput),
     });
 
     if (penNum.trim()) {
         query.set("penNum", penNum.trim());
+    }
+
+    if (partNum.trim()) {
+        query.set("partNum", partNum.trim());
+    }
+
+    if (grade.trim()) {
+        query.set("grade", grade.trim());
     }
 
     const response = await fetch(
@@ -150,7 +191,7 @@ export async function
         throw new Error(
             await readError(
                 response,
-                "Unable to disassociate the included Holders."
+                "Unable to withdraw the included Holders."
             )
         );
     }

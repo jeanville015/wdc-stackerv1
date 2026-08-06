@@ -20,6 +20,10 @@ export interface FgiWithdrawalRequest {
 export interface FgiWithdrawalHolder {
     Holder: string;
     Qty: number;
+    ProductName: string;
+    Factory: string;
+    Status: string;
+    IsInSiteHold?: boolean;
 }
 
 export interface FgiWithdrawalShipBox {
@@ -28,6 +32,7 @@ export interface FgiWithdrawalShipBox {
     LayerRowNum: number;
     LayerColNum: number;
     Holders: FgiWithdrawalHolder[];
+    Lec: string;
 }
 
 export interface FgiWithdrawalBox {
@@ -35,6 +40,9 @@ export interface FgiWithdrawalBox {
     LayerRowNum: number;
     LayerColNum: number;
     ShipBoxes: FgiWithdrawalShipBox[];
+    Grade: string;
+    PartNum: string;
+    PenNum: string;
 }
 
 export interface FgiWithdrawalRack {
@@ -55,6 +63,7 @@ export interface FgiWithdrawalSourceRecord {
     RunningTotal: number;
     IsIncluded: boolean;
     Status: string;
+    WasReviewedForHold: boolean;
 }
 
 export interface FgiWithdrawalDisassociationPreview {

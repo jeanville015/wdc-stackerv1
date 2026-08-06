@@ -4,6 +4,7 @@ using WDC_STACKER.API.Models;
 using WDC_STACKER.API.Models.Feats;
 using WDC_STACKER.API.Models.Stacker;
 using WDC_STACKER.API.Services;
+using System.Collections.Concurrent;
 
 namespace WDC_STACKER.API.Aggregate
 {
@@ -14,15 +15,30 @@ namespace WDC_STACKER.API.Aggregate
         private readonly FeatsCredentialStore _credentialStore;
         private readonly CapacityConfigService _capacityConfigService;
         private readonly StackerSqlService _stackerSqlService;
+        private readonly IConfiguration _config;
         private readonly ILogger<StackerAggregate> _logger;
+        private static readonly ConcurrentDictionary<string, (bool IsOnHold, string HoldSource)> _holdCheckCache = new();
+        private static readonly ConcurrentDictionary<string, (FgiWithdrawalDisassociationPreviewView Preview, DateTime CachedAt)> _previewCache = new();
+        private static readonly TimeSpan _cacheExpiration = TimeSpan.FromMinutes(10);
 
-        public StackerAggregate(FeatsService featsService, AhsService ahsService, FeatsCredentialStore credentialStore, CapacityConfigService capacityConfigService, StackerSqlService stackerSqlService, ILogger<StackerAggregate> logger)
+        // ── In-site hold badge cache (grid/rack display only) ───────────────────
+        // Separate from _holdCheckCache above (which gates scan/assign eligibility)
+        // so a slow-changing display badge never invalidates the assign-time cache.
+        private static readonly TimeSpan InSiteHoldCacheDuration = TimeSpan.FromMinutes(2);
+        private static readonly ConcurrentDictionary<string, InSiteHoldCacheEntry>
+            InSiteHoldCache = new(StringComparer.OrdinalIgnoreCase);
+
+        private sealed record InSiteHoldCacheEntry(bool IsOnInSiteHold, DateTime ExpiresAt);
+        private const string DefaultFgiRbf2Operation = "735617 RBF 2";
+
+        public StackerAggregate(FeatsService featsService, AhsService ahsService, FeatsCredentialStore credentialStore, CapacityConfigService capacityConfigService, StackerSqlService stackerSqlService, IConfiguration config, ILogger<StackerAggregate> logger)
         {
             _featsService = featsService;
             _ahsService = ahsService;
             _credentialStore = credentialStore;
             _capacityConfigService = capacityConfigService;
             _stackerSqlService = stackerSqlService;
+            _config = config;
             _logger = logger;
 
         }
@@ -54,7 +70,8 @@ namespace WDC_STACKER.API.Aggregate
 
         public async Task<GridViewBoxMapResult> MapGridViewBoxData(
             string? clientKey,
-            HolderAssignInsertData? holderData = null)
+            HolderAssignInsertData? holderData = null,
+            string? token = null)
         {
             var config = await _capacityConfigService.GetAsync(clientKey);
             var process = ResolveProcess(clientKey);
@@ -72,6 +89,14 @@ namespace WDC_STACKER.API.Aggregate
                         box.BoxNo,
                         config.MAX_ITEM_PER_BOX_SHIPBOX,
                         process);
+                }
+
+                // Populate in-site hold badges for the rack overview grid (mini
+                // ShipBox cells) whenever a session token is available. No-op if
+                // token is null/expired so all existing callers are unaffected.
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    await PopulateFgiInSiteHoldStatusAsync(boxes, process, token);
                 }
             }
 
@@ -539,6 +564,40 @@ namespace WDC_STACKER.API.Aggregate
                 "WDC_STACKER.CLIENT.FGI",
                 StringComparison.OrdinalIgnoreCase);
 
+            var process = ResolveProcess(clientKey);
+            var existingLocation = await _stackerSqlService.GetHolderAssignLocationAsync(holder, process);
+
+            if (existingLocation is not null)
+            {
+                var existingGridViewBoxMap = await MapGridViewBoxData(clientKey, token: token);
+                var existingBoxes = existingGridViewBoxMap.Boxes;
+                var existingBox = existingBoxes.FirstOrDefault(b =>
+                    string.Equals(b.BoxNo, existingLocation.Value.BoxName, StringComparison.OrdinalIgnoreCase));
+
+                var locationMessage = existingBox is not null
+                    ? $"Holder is already assigned to Box {existingBox.BoxNo} (Rack {existingBox.RackNum}, Layer {existingBox.LayerRowNum}, Column {existingBox.LayerColNum})"
+                    : $"Holder is already assigned to Box {existingLocation.Value.BoxName}";
+
+                if (existingBox is not null)
+                {
+                    existingBox.IsSuggestedTarget = true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(existingLocation.Value.ShipBoxName))
+                {
+                    locationMessage += $", ShipBox {existingLocation.Value.ShipBoxName}";
+                }
+
+                return new ScanHolderJobResponse
+                {
+                    Success = false,
+                    CanAssign = false,
+                    Holder = holder,
+                    Message = locationMessage,
+                    GridViewBoxes = existingBoxes
+                };
+            }
+
             var fieldNames = new List<string>
             {
                 "Holder",
@@ -622,9 +681,32 @@ namespace WDC_STACKER.API.Aggregate
             var holdComment = GetField(row, "HoldComment");
             var inProcess = GetField(row, "InProcess");
 
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Holder={Holder}, ClientKey={ClientKey}, IsFGI={IsFGI}",
+                holder,
+                clientKey,
+                isFgi);
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Values - Operation={Operation}, PartNumber={PartNumber}, ProductName={ProductName}, BinName={BinName}, HoldReason={HoldReason}, HoldComment={HoldComment}, InProcess={InProcess}",
+                operation,
+                partNumber ?? "NULL",
+                productName ?? "NULL",
+                binName ?? "NULL",
+                holdReason ?? "NULL",
+                holdComment ?? "NULL",
+                inProcess ?? "NULL");
+
             // 1. Operation must match config.ValidOperation
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Checking Operation - Expected={ExpectedOperation}, Actual={ActualOperation}",
+                config.ValidOperation,
+                operation);
             if (!string.Equals(operation, config.ValidOperation, StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogWarning(
+                    "[SCAN VALIDATION] FAILED - Operation mismatch. Expected={Expected}, Actual={Actual}",
+                    config.ValidOperation,
+                    operation);
                 return new ScanHolderJobResponse
                 {
                     Success = false,
@@ -635,21 +717,22 @@ namespace WDC_STACKER.API.Aggregate
                     RawQueryResult = holderJobResult
                 };
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - Operation check");
 
-            // Note: disable for now while on development/QA, enable once on UAT/PROD
-            // 2. ParentHolder must have No value 
-            //if (!string.IsNullOrWhiteSpace(parentHolder))
-            //{
-            //    return new ScanHolderJobResponse
-            //    {
-            //        Success = false,
-            //        CanAssign = false,
-            //        Holder = holder,
-            //        Message = "ParentHolder has value!",
-            //        HolderJob = row,
-            //        RawQueryResult = holderJobResult
-            //    };
-            //}
+            //Note: disable for now while on development/QA, enable once on UAT/PROD
+            //2. ParentHolder must have No value 
+            if (!string.IsNullOrWhiteSpace(parentHolder))
+            {
+               return new ScanHolderJobResponse
+               {
+                   Success = false,
+                   CanAssign = false,
+                   Holder = holder,
+                   Message = "ParentHolder has value!",
+                   HolderJob = row,
+                   RawQueryResult = holderJobResult
+               };
+            }
 
             // Note: disable for now while on development/QA, enable once on UAT/PROD
             // 3. ShipTicket must be empty
@@ -668,27 +751,42 @@ namespace WDC_STACKER.API.Aggregate
 
             // 4. FGI Box identity requires PartNum and ProductName.
             // If PartNumber is missing, MoveOut to RBF2 and apply Hold.
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Checking PartNumber/ProductName - PartNumber={PartNumber}, ProductName={ProductName}",
+                partNumber ?? "NULL",
+                productName ?? "NULL");
             if (isFgi &&
                 (string.IsNullOrWhiteSpace(partNumber) ||
                  string.IsNullOrWhiteSpace(productName)))
             {
+                _logger.LogWarning(
+                    "[SCAN VALIDATION] FAILED - Missing PartNumber or ProductName. PartNumber={PartNumber}, ProductName={ProductName}",
+                    partNumber ?? "NULL",
+                    productName ?? "NULL");
                 // MoveOut to RBF2
                 var moveOutResult = await _featsService.MoveOutAsync(
                     holder: holder,
                     holderType: null,
-                    resource: "735617 RBF2",
+                    resource: "735617 RBF 2",
                     nextOp: null,
                     username: credentials.Username,
                     password: credentials.Password);
 
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
+                    moveOutResult.Success,
+                    moveOutResult.Message);
                 if (!moveOutResult.Success)
                 {
+                    _logger.LogError(
+                        "[SCAN VALIDATION] FAILED - MoveOut to RBF2 failed: {Message}",
+                        moveOutResult.Message);
                     return new ScanHolderJobResponse
                     {
                         Success = false,
                         CanAssign = false,
                         Holder = holder,
-                        Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                        Message = $"MoveOut to 735617 RBF 2 failed: {moveOutResult.Message}",
                         HolderJob = row,
                         RawQueryResult = holderJobResult
                     };
@@ -703,13 +801,16 @@ namespace WDC_STACKER.API.Aggregate
                     username: credentials.Username,
                     password: credentials.Password);
 
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] Hold application - Success={Success}, Message={Message}",
+                    holdResult.Success,
+                    holdResult.Message);
                 if (!holdResult.Success)
                 {
                     // Compensating logic: Hold failed after MoveOut succeeded
                     // Log the partial failure state and return error
                     _logger.LogWarning(
-                        "Partial failure for holder={Holder}: MoveOut succeeded but Hold failed. Message: {HoldMessage}",
-                        holder,
+                        "[SCAN VALIDATION] PARTIAL FAILURE - MoveOut succeeded but Hold failed. Message: {HoldMessage}",
                         holdResult.Message);
 
                     return new ScanHolderJobResponse
@@ -733,9 +834,12 @@ namespace WDC_STACKER.API.Aggregate
                     RawQueryResult = holderJobResult
                 };
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - PartNumber/ProductName check");
 
             if (isFgi && string.IsNullOrWhiteSpace(productName))
             {
+                _logger.LogWarning(
+                    "[SCAN VALIDATION] FAILED - ProductName is missing");
                 return new ScanHolderJobResponse
                 {
                     Success = false,
@@ -749,24 +853,39 @@ namespace WDC_STACKER.API.Aggregate
 
             // 5. BinName must be exactly 5 characters for FGI.
             // If not, MoveOut to RBF2.
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Checking BinName - BinName={BinName}, Length={Length}",
+                binName ?? "NULL",
+                binName?.Length ?? 0);
             if (isFgi && binName?.Length != 5)
             {
+                _logger.LogWarning(
+                    "[SCAN VALIDATION] FAILED - BinName must be exactly 5 characters. Current={BinName}, Length={Length}",
+                    binName ?? "NULL",
+                    binName?.Length ?? 0);
                 var moveOutResult = await _featsService.MoveOutAsync(
                     holder: holder,
                     holderType: null,
-                    resource: "735617 RBF2",
+                    resource: "735617 RBF 2",
                     nextOp: null,
                     username: credentials.Username,
                     password: credentials.Password);
 
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
+                    moveOutResult.Success,
+                    moveOutResult.Message);
                 if (!moveOutResult.Success)
                 {
+                    _logger.LogError(
+                        "[SCAN VALIDATION] FAILED - MoveOut to RBF2 failed: {Message}",
+                        moveOutResult.Message);
                     return new ScanHolderJobResponse
                     {
                         Success = false,
                         CanAssign = false,
                         Holder = holder,
-                        Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                        Message = $"MoveOut to 735617 RBF 2 failed: {moveOutResult.Message}",
                         HolderJob = row,
                         RawQueryResult = holderJobResult
                     };
@@ -782,12 +901,21 @@ namespace WDC_STACKER.API.Aggregate
                     RawQueryResult = holderJobResult
                 };
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - BinName check");
 
             // 6. Two-step Hold Validation
             // Step 1: Check FEATS HoldReason and HoldComment
             // If both are null, holder is free of holds
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Checking FEATS Hold - HoldReason={HoldReason}, HoldComment={HoldComment}",
+                holdReason ?? "NULL",
+                holdComment ?? "NULL");
             if (!string.IsNullOrWhiteSpace(holdReason) || !string.IsNullOrWhiteSpace(holdComment))
             {
+                _logger.LogWarning(
+                    "[SCAN VALIDATION] FAILED - Holder has FEATS hold. HoldReason={HoldReason}, HoldComment={HoldComment}",
+                    holdReason ?? "NULL",
+                    holdComment ?? "NULL");
                 return new ScanHolderJobResponse
                 {
                     Success = false,
@@ -798,6 +926,7 @@ namespace WDC_STACKER.API.Aggregate
                     RawQueryResult = holderJobResult
                 };
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - FEATS Hold check");
 
             // Step 2: Check AHS SliderCheck2 for all operations in config
             // Loop through each operation and check if holder has hold/slider issue
@@ -809,16 +938,31 @@ namespace WDC_STACKER.API.Aggregate
                 // If no operations configured, use the current operation as fallback
                 holdValidationOperations = new List<string> { operation };
             }
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Checking AHS SliderCheck2 for {Count} operations: {Operations}",
+                holdValidationOperations.Count,
+                string.Join(", ", holdValidationOperations));
 
             foreach (var validationOperation in holdValidationOperations)
             {
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] AHS SliderCheck2 - Operation={Operation}",
+                    validationOperation);
                 var sliderCheckResult = await _ahsService.SliderCheck2Async(
                     holder: holder,
                     operation: validationOperation,
                     checkExist: false);
 
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] AHS SliderCheck2 Result - Success={Success}, RawResponse={RawResponse}",
+                    sliderCheckResult.Success,
+                    sliderCheckResult.RawResponse ?? "NULL");
                 if (!sliderCheckResult.Success)
                 {
+                    _logger.LogError(
+                        "[SCAN VALIDATION] FAILED - AHS SliderCheck2 failed for operation '{Operation}': {Message}",
+                        validationOperation,
+                        sliderCheckResult.Message);
                     return new ScanHolderJobResponse
                     {
                         Success = false,
@@ -830,27 +974,49 @@ namespace WDC_STACKER.API.Aggregate
                     };
                 }
 
-                // Check if result is EXISTS or ONHOLD - if so, fail validation
-                var responseUpper = sliderCheckResult.RawResponse?.ToUpperInvariant();
-                if (responseUpper == "EXISTS" || responseUpper == "ONHOLD")
+                // Check if result contains EXISTS, ONHOLD, ERROR, or PASSED
+                var responseUpper = sliderCheckResult.RawResponse?.ToUpperInvariant() ?? string.Empty;
+                var isHoldIssue = responseUpper.Contains("EXISTS") || responseUpper.Contains("ONHOLD");
+                var isError = responseUpper.Contains("ERROR");
+                var isPassed = responseUpper.Contains("PASSED");
+
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] AHS Response Check - Response={Response}, IsHoldIssue={IsHoldIssue}, IsError={IsError}, IsPassed={IsPassed}",
+                    responseUpper,
+                    isHoldIssue,
+                    isError,
+                    isPassed);
+
+                if (isHoldIssue)
                 {
+                    _logger.LogWarning(
+                        "[SCAN VALIDATION] FAILED - Holder has hold/slider issue for operation '{Operation}'. Response: {Response}",
+                        validationOperation,
+                        responseUpper);
                     // MoveOut to RBF2
                     var moveOutResult = await _featsService.MoveOutAsync(
                         holder: holder,
                         holderType: null,
-                        resource: "735617 RBF2",
+                        resource: "735617 RBF 2",
                         nextOp: null,
                         username: credentials.Username,
                         password: credentials.Password);
 
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
+                        moveOutResult.Success,
+                        moveOutResult.Message);
                     if (!moveOutResult.Success)
                     {
+                        _logger.LogError(
+                            "[SCAN VALIDATION] FAILED - MoveOut to RBF2 failed: {Message}",
+                            moveOutResult.Message);
                         return new ScanHolderJobResponse
                         {
                             Success = false,
                             CanAssign = false,
                             Holder = holder,
-                            Message = $"MoveOut to 735617 RBF2 failed: {moveOutResult.Message}",
+                            Message = $"MoveOut to 735617 RBF 2 failed: {moveOutResult.Message}",
                             HolderJob = row,
                             RawQueryResult = holderJobResult
                         };
@@ -867,20 +1033,46 @@ namespace WDC_STACKER.API.Aggregate
                     };
                 }
 
-                // If result is PASSED, continue to next operation
+                if (isError)
+                {
+                    _logger.LogError(
+                        "[SCAN VALIDATION] FAILED - AHS Check returned ERROR for operation '{Operation}'. Response: {Response}",
+                        validationOperation,
+                        sliderCheckResult.RawResponse);
+
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"Holder {holder} has error on AHS Check: {sliderCheckResult.RawResponse}",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                // If result contains PASSED, continue to next operation
                 // If result is anything else, log it but continue
-                if (responseUpper != "PASSED")
+                if (!isPassed)
                 {
                     _logger.LogWarning(
-                        "AHS SliderCheck2 returned unexpected response for holder={Holder}, operation={Operation}: {Response}",
+                        "[SCAN VALIDATION] AHS SliderCheck2 returned unexpected response for holder={Holder}, operation={Operation}: {Response}",
                         holder,
                         validationOperation,
                         sliderCheckResult.RawResponse);
                 }
+                else
+                {
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] AHS SliderCheck2 PASSED for operation={Operation}",
+                        validationOperation);
+                }
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - AHS SliderCheck2 check (all operations)");
 
             if (isFgi && !TryGetValidatedHolderQty(row, out _))
             {
+                _logger.LogWarning("[SCAN VALIDATION] FAILED - Holder QTY is invalid");
                 return new ScanHolderJobResponse
                 {
                     Success = false,
@@ -891,11 +1083,17 @@ namespace WDC_STACKER.API.Aggregate
                     RawQueryResult = holderJobResult
                 };
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - Holder QTY check");
 
             // 7. InProcess Validation (Last validation)
             // If InProcess is not "True", perform MoveIn then continue
+            _logger.LogInformation(
+                "[SCAN VALIDATION] Checking InProcess - InProcess={InProcess}",
+                inProcess ?? "NULL");
             if (!string.Equals(inProcess, "True", StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] InProcess is not 'True', performing MoveIn...");
                 var moveInResult = await _featsService.MoveInAsync(
                     holder: holder,
                     holderType: null,
@@ -903,8 +1101,15 @@ namespace WDC_STACKER.API.Aggregate
                     username: credentials.Username,
                     password: credentials.Password);
 
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] MoveIn Result - Success={Success}, Message={Message}",
+                    moveInResult.Success,
+                    moveInResult.Message);
                 if (!moveInResult.Success)
                 {
+                    _logger.LogError(
+                        "[SCAN VALIDATION] FAILED - MoveIn failed: {Message}",
+                        moveInResult.Message);
                     return new ScanHolderJobResponse
                     {
                         Success = false,
@@ -917,10 +1122,11 @@ namespace WDC_STACKER.API.Aggregate
                 }
 
                 _logger.LogInformation(
-                    "MoveIn successful for holder={Holder} with InProcess={InProcess}",
+                    "[SCAN VALIDATION] MoveIn successful for holder={Holder} with InProcess={InProcess}",
                     holder,
                     inProcess);
             }
+            _logger.LogInformation("[SCAN VALIDATION] PASSED - InProcess check");
 
             HolderAssignInsertData? suggestionData = null;
 
@@ -959,12 +1165,17 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             // 5. If all validation checks pass, map the target for this holder.
+            _logger.LogInformation("[SCAN VALIDATION] All validations passed, mapping target box...");
             var gridViewBoxMap = await MapGridViewBoxData(
                 clientKey,
-                suggestionData);
+                suggestionData,
+                token);
 
             if (!gridViewBoxMap.HasSuggestedTarget)
             {
+                _logger.LogWarning(
+                    "[SCAN VALIDATION] FAILED - No suggested target box. Message={Message}",
+                    gridViewBoxMap.Message);
                 return new ScanHolderJobResponse
                 {
                     Success = false,
@@ -976,6 +1187,9 @@ namespace WDC_STACKER.API.Aggregate
                     GridViewBoxes = gridViewBoxMap.Boxes
                 };
             }
+            _logger.LogInformation(
+                "[SCAN VALIDATION] SUCCESS - All validations passed for holder={Holder}",
+                holder);
             return new ScanHolderJobResponse
             {
                 Success = true,
@@ -1144,18 +1358,6 @@ namespace WDC_STACKER.API.Aggregate
             else
             {
                 // Preserve the original PWD validation and LEC formula.
-                if (binName.Length != 5)
-                {
-                    return new AssignHolderResponse
-                    {
-                        Success = false,
-                        Holder = holder,
-                        BoxName = boxNo,
-                        Message = "BinName length is not eligible.",
-                        RawQueryResult = holderJobResult
-                    };
-                }
-
                 if (string.IsNullOrWhiteSpace(buildCode) ||
                     string.IsNullOrWhiteSpace(productName))
                 {
@@ -1204,20 +1406,6 @@ namespace WDC_STACKER.API.Aggregate
                 lecValue = firstPart + secondPart + thirdPart;
             }
 
-            var holderAlreadyAssigned = await _stackerSqlService.HolderAssignExistsAsync(holder, process);
-
-            if (holderAlreadyAssigned)
-            {
-                return new AssignHolderResponse
-                {
-                    Success = false,
-                    Holder = holder,
-                    BoxName = boxNo,
-                    Message = "Holder is already assigned.",
-                    RawQueryResult = holderJobResult
-                };
-            }
-
             var boxExists = await _stackerSqlService.BoxNoExistsAsync(boxNo, process);
 
             var boxDetails = boxExists
@@ -1249,6 +1437,7 @@ namespace WDC_STACKER.API.Aggregate
                 Lec = lecValue,
                 Factory = buildCode,
                 Process = process,
+                BinName = binName,
                 UpdateBy = credentials.Username,
                 UpdateTs = DateTime.Now
             };
@@ -1277,6 +1466,7 @@ namespace WDC_STACKER.API.Aggregate
                         };
 
                     await _stackerSqlService.InsertFgiAssignmentAsync(boxDetails, shipBoxDetails, holderAssign);
+                    _previewCache.Clear();
                 }
                 else
                 {
@@ -1323,7 +1513,8 @@ namespace WDC_STACKER.API.Aggregate
 
             var gridViewBoxMap = await MapGridViewBoxData(
                 clientKey,
-                isFgi ? holderAssign : null);
+                isFgi ? holderAssign : null,
+                token);
 
             return new AssignHolderResponse
             {
@@ -1547,6 +1738,133 @@ namespace WDC_STACKER.API.Aggregate
             );
         }
 
+        private async Task<(bool Success, bool IsOnInSiteHold)> GetCachedHolderInSiteHoldAsync(string holder, string username, string password)
+        {
+            var cacheKey = holder.Trim();
+            var now = DateTime.UtcNow;
+
+            if (InSiteHoldCache.TryGetValue(cacheKey, out var cached) &&
+                cached.ExpiresAt > now)
+            {
+                return (true, cached.IsOnInSiteHold);
+            }
+
+            var result = await CheckHolderInSiteHoldAsync(
+                holder,
+                username,
+                password);
+
+            if (result.Success)
+            {
+                InSiteHoldCache[cacheKey] = new InSiteHoldCacheEntry(
+                    result.IsOnInSiteHold,
+                    now.Add(InSiteHoldCacheDuration));
+            }
+
+            return (result.Success, result.IsOnInSiteHold);
+        }
+
+        /// <summary>
+        /// Annotates each ShipBoxView in <paramref name="boxes"/> with in-site hold
+        /// badge data (InSiteHoldHolders/InSiteHoldPositions) by checking every
+        /// distinct holder currently assigned to those boxes against FEATS.
+        /// No-op if the session token has no stored FEATS credentials.
+        /// </summary>
+        private async Task PopulateFgiInSiteHoldStatusAsync(
+            IReadOnlyCollection<BoxView> boxes,
+            string process,
+            string token,
+            string? boxNo = null)
+        {
+            if (!_credentialStore.TryGet(token, out var credentials))
+                return;
+
+            var locations = await _stackerSqlService.GetFgiHolderLocationsAsync(
+                process,
+                boxNo);
+
+            if (locations.Count == 0)
+                return;
+
+            var holders = locations
+                .Select(location => location.Holder)
+                .Where(holder => !string.IsNullOrWhiteSpace(holder))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            using var gate = new SemaphoreSlim(4);
+            var checks = await Task.WhenAll(holders.Select(async holder =>
+            {
+                await gate.WaitAsync();
+
+                try
+                {
+                    var check = await GetCachedHolderInSiteHoldAsync(
+                        holder,
+                        credentials.Username,
+                        credentials.Password);
+
+                    return (Holder: holder, Check: check);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }));
+
+            var heldHolders = checks
+                .Where(result =>
+                    result.Check.Success &&
+                    result.Check.IsOnInSiteHold)
+                .Select(result => result.Holder)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var locationGroups = locations.GroupBy(location =>
+                $"{location.BoxNo}\u0000{location.ShipBoxName}",
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var locationGroup in locationGroups)
+            {
+                var firstLocation = locationGroup.First();
+                var box = boxes.FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.BoxNo,
+                        firstLocation.BoxNo,
+                        StringComparison.OrdinalIgnoreCase));
+                var shipBox = box?.ShipBoxes.FirstOrDefault(candidate =>
+                    string.Equals(
+                        candidate.ShipBoxName,
+                        firstLocation.ShipBoxName,
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (shipBox is null)
+                    continue;
+
+                foreach (var indexedLocation in locationGroup.Select(
+                             (location, index) => new { Location = location, Index = index }))
+                {
+                    if (!heldHolders.Contains(indexedLocation.Location.Holder))
+                        continue;
+
+                    if (!shipBox.InSiteHoldHolders.Contains(
+                            indexedLocation.Location.Holder,
+                            StringComparer.OrdinalIgnoreCase))
+                    {
+                        shipBox.InSiteHoldHolders.Add(
+                            indexedLocation.Location.Holder);
+                    }
+
+                    shipBox.InSiteHoldPositions.Add(indexedLocation.Index);
+                }
+            }
+
+            foreach (var shipBox in boxes.SelectMany(box => box.ShipBoxes))
+            {
+                shipBox.InSiteHoldHolders.Sort(StringComparer.OrdinalIgnoreCase);
+                shipBox.InSiteHoldPositions.Sort();
+            }
+        }
+
         private async Task<FeatsQueryResponse> ExecuteFeatsQueryAsync(string queryType, string[] fieldNames, string filterName, string filterValue, int recordLimit, string username, string password)
         {
              var request = new FeatsQueryRequest
@@ -1578,7 +1896,8 @@ namespace WDC_STACKER.API.Aggregate
             bool suggest,
             string? clientKey,
             string? lec = null,
-            bool hasLecContext = false)
+            bool hasLecContext = false,
+            string? token = null)
         {
             var config = await _capacityConfigService.GetAsync(clientKey);
             var process = ResolveProcess(clientKey);
@@ -1590,6 +1909,22 @@ namespace WDC_STACKER.API.Aggregate
                 boxNo,
                 config.MAX_ITEM_PER_BOX_SHIPBOX,
                 process);
+
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                await PopulateFgiInSiteHoldStatusAsync(
+                    new List<BoxView>
+                    {
+                        new()
+                        {
+                            BoxNo = boxNo,
+                            ShipBoxes = shipBoxes
+                        }
+                    },
+                    process,
+                    token,
+                    boxNo);
+            }
 
             if (!suggest || !hasLecContext)
                 return shipBoxes;
@@ -1613,7 +1948,7 @@ namespace WDC_STACKER.API.Aggregate
             return _stackerSqlService.GetFgiWithdrawalRequestsAsync();
         }
 
-        public async Task<( bool Success, string Message,  FgiWithdrawalDisassociationPreviewView? Preview)> GetFgiWithdrawalDisassociationPreviewAsync(string lec, string? penNum, int total, string token, string? clientKey)
+        public async Task<( bool Success, string Message,  FgiWithdrawalDisassociationPreviewView? Preview)> GetFgiWithdrawalDisassociationPreviewAsync(string? lec, string? penNum, int total, string? partNum, string? grade, int actualOutput, string token, string? clientKey)
         {
             if (!_credentialStore.TryGet(
                     token,
@@ -1626,12 +1961,30 @@ namespace WDC_STACKER.API.Aggregate
                 );
             }
 
+            var cacheKey = $"{lec}|{penNum ?? "null"}|{total}|{partNum ?? "null"}|{grade ?? "null"}|{actualOutput}".ToUpperInvariant();
+
+            if (_previewCache.TryGetValue(cacheKey, out var cachedEntry))
+            {
+                if (DateTime.UtcNow - cachedEntry.CachedAt < _cacheExpiration)
+                {
+                    _logger.LogInformation("Preview cache hit for key={CacheKey}", cacheKey);
+                    return (true, "Disassociation preview loaded from cache.", cachedEntry.Preview);
+                }
+                else
+                {
+                    _previewCache.TryRemove(cacheKey, out _);
+                }
+            }
+
             var preview =
                 await _stackerSqlService
                     .GetFgiWithdrawalDisassociationPreviewAsync(
                         lec,
                         penNum,
-                        total);
+                        total,
+                        partNum,
+                        grade,
+                        actualOutput);
 
             var config = await _capacityConfigService.GetAsync(clientKey);
             var holdValidationOperations = config.HoldValidationOperations;
@@ -1648,9 +2001,12 @@ namespace WDC_STACKER.API.Aggregate
                 if (!qualifiesByQty)
                 {
                     record.IsIncluded = false;
+                    record.WasReviewedForHold = false;
                     record.RunningTotal = runningTotal;
                     continue;
                 }
+
+                record.WasReviewedForHold = true;
 
                 var holdCheck =
                     await CheckHolderHoldsAsync(
@@ -1687,6 +2043,8 @@ namespace WDC_STACKER.API.Aggregate
             preview.TotalQty = runningTotal;
             //-- CHECK HOLD (FEATS + AHS) WITH FIFO BACKFILL: END ------------------------//
 
+            _previewCache.TryAdd(cacheKey, (preview, DateTime.UtcNow));
+
             return (
                 true,
                 "Disassociation preview loaded successfully.",
@@ -1701,6 +2059,14 @@ namespace WDC_STACKER.API.Aggregate
         /// </summary>
         private async Task<(bool Success, string Message, bool IsOnHold, string HoldSource)> CheckHolderHoldsAsync(string holder, string username, string password, IReadOnlyList<string> holdValidationOperations)
         {
+            var cacheKey = holder.ToUpperInvariant();
+
+            if (_holdCheckCache.TryGetValue(cacheKey, out var cachedResult))
+            {
+                return (true, string.Empty, cachedResult.IsOnHold, cachedResult.HoldSource);
+            }
+
+            //-- FEATS IN-SITE HOLD CHECK: START (comment out to disable) ------------------\\
             var inSiteHoldCheck =
                 await CheckHolderInSiteHoldAsync(
                     holder,
@@ -1714,47 +2080,97 @@ namespace WDC_STACKER.API.Aggregate
 
             if (inSiteHoldCheck.IsOnInSiteHold)
             {
-                return (true, string.Empty, true, "IN-SITE HOLD");
+                var result = (true, string.Empty, true, "IN-SITE HOLD");
+                _holdCheckCache.TryAdd(cacheKey, (true, "IN-SITE HOLD"));
+                return result;
             }
+            //-- FEATS IN-SITE HOLD CHECK: END --------------------------------------------//
 
-            foreach (var operation in holdValidationOperations)
-            {
-                var ahsHoldCheck =
-                    await _ahsService.CheckHoldAsync(holder, operation);
-
-                if (!ahsHoldCheck.Success)
-                {
-                    return (false, ahsHoldCheck.Message, false, string.Empty);
-                }
-
-                if (ahsHoldCheck.IsOnHold)
-                {
-                    return (true, string.Empty, true, "AHS HOLD");
-                }
-            }
-
-            return (true, string.Empty, false, string.Empty);
+            var noHoldResult = (true, string.Empty, false, string.Empty);
+            _holdCheckCache.TryAdd(cacheKey, (false, string.Empty));
+            return noHoldResult;
         }
 
         /// <summary>
         /// "Verify ShipBox" step of the Job Withdrawal flow, run right after
-        /// "Enter Shipping Box Allocation". Intended to validate that the
-        /// entered Shipping Id is valid before continuing; if invalid, the
-        /// UI should return the user to the Shipping Id input.
+        /// "Enter Shipping Box Allocation". Validates that the entered
+        /// Shipping Id refers to an existing, available (empty) ShipBox
+        /// holder in FEATS before continuing; if invalid, the UI should
+        /// return the user to the Shipping Id input.
         ///
-        /// STUBBED/BYPASSED per request: always passes (aside from a
-        /// non-empty check) until the real validation rule is provided. See
-        /// JOB_WITHDRAWAL_CHANGES.md.
+        /// Logic:
+        /// 1. Query(Holder) for shippingId — must return a record and
+        ///    HOLDERTYPE must equal "SHPBOX" (confirms the ShipBox exists).
+        /// 2. Query(HolderJob) for shippingId — must return a record with a
+        ///    ChildJobCount value (confirms the ShipBox is empty/available).
         /// </summary>
-        private (bool Success, string Message) VerifyShipBox(string shippingId)
+        private async Task<(bool Success, string Message)> VerifyShipBoxAsync(string shippingId, string username, string password)
         {
             if (string.IsNullOrWhiteSpace(shippingId))
             {
                 return (false, "ShippingId is required.");
             }
 
-            // TODO: implement real ShipBox verification. Bypassed for now.
-            return (true, "ShipBox verification bypassed (not yet implemented).");
+            var holderResult = await ExecuteFeatsQueryAsync(
+                queryType: "Holder",
+                fieldNames: ["Holder", "HolderType"],
+                filterName: "Holder",
+                filterValue: shippingId,
+                recordLimit: 1,
+                username: username,
+                password: password);
+
+            if (!holderResult.Success)
+            {
+                return (false, holderResult.Message);
+            }
+
+            var holderRow = holderResult.ParsedResult.Rows.FirstOrDefault();
+
+            if (holderRow is null)
+            {
+                return (false, $"ShippingId '{shippingId}' was not found in FEATS.");
+            }
+
+            var holderType = GetField(holderRow, "HolderType");
+
+            if (!string.Equals(holderType, "SHPBOX", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, $"ShippingId '{shippingId}' is not a ShipBox (HolderType={holderType}).");
+            }
+
+            var holderJobResult = await ExecuteFeatsQueryAsync(
+                queryType: "HolderJob",
+                fieldNames: ["Holder", "ChildJobCount"],
+                filterName: "Holder",
+                filterValue: shippingId,
+                recordLimit: 1,
+                username: username,
+                password: password);
+
+            if (!holderJobResult.Success)
+            {
+                return (false, holderJobResult.Message);
+            }
+
+            var holderJobRow = holderJobResult.ParsedResult.Rows.FirstOrDefault();
+
+            // No record = shipbox is empty (pass)
+            if (holderJobRow is null)
+            {
+                return (true, "ShipBox verified (empty).");
+            }
+
+            var childJobCount = GetField(holderJobRow, "ChildJobCount");
+
+            // ChildJobCount is null/empty/0 = shipbox is empty (pass)
+            if (string.IsNullOrWhiteSpace(childJobCount) || childJobCount == "0")
+            {
+                return (true, "ShipBox verified (empty).");
+            }
+
+            // ChildJobCount > 0 = shipbox has child holders (fail)
+            return (false, $"ShippingId '{shippingId}' is not empty (has {childJobCount} child holders).");
         }
 
         /// <summary>
@@ -1786,9 +2202,24 @@ namespace WDC_STACKER.API.Aggregate
                 password: credentials.Password);
         }
 
+        /// <summary>
+        /// Public entry point so the client can verify a Shipping Id (ShipBox)
+        /// against FEATS before the operator proceeds to scan/verify Holders.
+        /// Wraps <see cref="VerifyShipBoxAsync"/>.
+        /// </summary>
+        public async Task<(bool Success, string Message)> VerifyFgiWithdrawalShipBoxAsync(string shippingId, string token)
+        {
+            if (!_credentialStore.TryGet(token, out var credentials))
+            {
+                return (false, "Invalid or expired token.");
+            }
+
+            return await VerifyShipBoxAsync(shippingId, credentials.Username, credentials.Password);
+        }
+
         public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, string shippingId, IReadOnlyCollection<string> includedHolders, string token)
         {
-            if (!_credentialStore.TryGet(token, out _))
+            if (!_credentialStore.TryGet(token, out var credentials))
             {
                 return new FgiWithdrawalDisassociationResult
                 {
@@ -1797,8 +2228,10 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
-            //-- VERIFY SHIPBOX: START (bypassed) ----------------------------------------\\
-            var shipBoxCheck = VerifyShipBox(shippingId);
+            // Clear preview cache since data will change after successful disassociation
+            _previewCache.Clear();
+
+            var shipBoxCheck = await VerifyShipBoxAsync(shippingId, credentials.Username, credentials.Password);
 
             if (!shipBoxCheck.Success)
             {
@@ -1808,9 +2241,8 @@ namespace WDC_STACKER.API.Aggregate
                     Message = shipBoxCheck.Message
                 };
             }
-            //-- VERIFY SHIPBOX: END ------------------------------------------------------//
 
-            //-- ADD JOB TRANSACTION: START -----------------------------------------------\\
+        //ADD JOB TRANSACTION
             var addJobResult = await AddJobForWithdrawalAsync(
                 shippingId,
                 includedHolders.ToList(),
@@ -1824,9 +2256,9 @@ namespace WDC_STACKER.API.Aggregate
                     Message = addJobResult.Message
                 };
             }
-            //-- ADD JOB TRANSACTION: END ---------------------------------------------------//
+        
 
-            //-- MOVE-OUT TRANSACTION: START ------------------------------------------------\\
+        //MOVE-OUT TRANSACTION
             if (!_credentialStore.TryGet(token, out var moveOutCredentials))
             {
                 return new FgiWithdrawalDisassociationResult
@@ -1852,7 +2284,6 @@ namespace WDC_STACKER.API.Aggregate
                     Message = moveOutResult.Message
                 };
             }
-            //-- MOVE-OUT TRANSACTION: END --------------------------------------------------//
 
             var result = await _stackerSqlService
                 .DisassociateFgiWithdrawalAsync(
@@ -1864,10 +2295,9 @@ namespace WDC_STACKER.API.Aggregate
                 return result;
             }
 
-            //-- SEND EMAIL: START (placeholder) ------------------------------------------\\
-            // TODO: send withdrawal completion email to HGA/FGI for
-            // requestId (not yet implemented). See JOB_WITHDRAWAL_CHANGES.md.
-            //-- SEND EMAIL: END -----------------------------------------------------------//
+            // Email notification (Partial/Completed/Closed) is sent from
+            // StackerSqlService.DisassociateFgiWithdrawalAsync() based on the
+            // computed status change. See EmailService/IEmailService.
 
             return result;
         }
@@ -1906,12 +2336,58 @@ namespace WDC_STACKER.API.Aggregate
             );
         }
 
-        public Task<FgiWithdrawalRackView?> GetFgiWithdrawalLayoutAsync(
-            string lec,
-            string? clientKey)
+        public async Task<FgiWithdrawalRackView?> GetFgiWithdrawalLayoutAsync(
+            string? lec,
+            string? penNum,
+            string? partNum,
+            string? grade,
+            string? clientKey,
+            string? token = null)
         {
             var process = ResolveProcess(clientKey);
-            return _stackerSqlService.GetFgiWithdrawalLayoutAsync(lec, process);
+            var layout = await _stackerSqlService.GetFgiWithdrawalLayoutAsync(lec, penNum, partNum, grade, process);
+
+            if (layout is null ||
+                string.IsNullOrWhiteSpace(token) ||
+                !_credentialStore.TryGet(token, out var credentials))
+            {
+                return layout;
+            }
+
+            var holders = layout.Boxes
+                .SelectMany(box => box.ShipBoxes)
+                .SelectMany(shipBox => shipBox.Holders)
+                .Where(holder => !string.IsNullOrWhiteSpace(holder.Holder))
+                .GroupBy(
+                    holder => holder.Holder,
+                    StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            using var gate = new SemaphoreSlim(4);
+            await Task.WhenAll(holders.Select(async holderGroup =>
+            {
+                await gate.WaitAsync();
+
+                try
+                {
+                    var check = await GetCachedHolderInSiteHoldAsync(
+                        holderGroup.Key,
+                        credentials.Username,
+                        credentials.Password);
+
+                    if (!check.Success || !check.IsOnInSiteHold)
+                        return;
+
+                    foreach (var holder in holderGroup)
+                        holder.IsInSiteHold = true;
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }));
+
+            return layout;
         }
 
         public Task<List<BoxAssignment>> GetShipBoxAssignmentsAsync(string boxName, string shipBoxName, string? clientKey)
@@ -1983,6 +2459,8 @@ namespace WDC_STACKER.API.Aggregate
                     new List<BoxView>()
                 );
             }
+
+            _previewCache.Clear();
             //-- SQL DELETE for HOLDER_ASSIGN: END --------------------------------------//
 
             var gridView = await MapGridViewBoxData(clientKey);
@@ -1991,6 +2469,220 @@ namespace WDC_STACKER.API.Aggregate
                 true,
                 "Holder disassociated successfully.",
                 gridView.Boxes
+            );
+        }
+
+        /// <summary>
+        /// FGI-only "Disassociate" action for a held Holder in the Job Scanning
+        /// grid (Rack -&gt; Box -&gt; ShipBox -&gt; Holder). Unlike
+        /// <see cref="DisassociateHolderAsync"/> (base client, RELEASE-status
+        /// holders), this queries the holder's current FEATS hold, releases
+        /// it, moves the holder to RBF2, then re-applies the same hold at the
+        /// new location before removing it from the local HOLDER_ASSIGN grid.
+        /// This is a fully independent flow and does not share logic with the
+        /// base client's disassociate action.
+        /// </summary>
+        public async Task<(bool Success, string Message, List<BoxView> Boxes)> DisassociateFgiHolderAsync(string holder, string token, string? clientKey)
+        {
+            if (!_credentialStore.TryGet(token, out var credentials))
+            {
+                return (
+                    false,
+                    "Invalid or expired token.",
+                    new List<BoxView>()
+                );
+            }
+
+            var process = ResolveProcess(clientKey);
+            var rbf2Operation = _config["Stacker:FgiRbf2Operation"] ?? DefaultFgiRbf2Operation;
+
+            //-- STEP 1: QUERY HOLDER HOLD INFO: START -----------------------------------\\
+            FeatsQueryResponse holderJobResult;
+            try
+            {
+                holderJobResult = await ExecuteFeatsQueryAsync(
+                    queryType: "HolderJob",
+                    fieldNames: new[] { "Holder", "HoldReason", "HoldComment" },
+                    filterName: "Holder",
+                    filterValue: holder,
+                    recordLimit: 250,
+                    username: credentials.Username,
+                    password: credentials.Password);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[FGI DISASSOCIATE] HolderJob query threw for holder={Holder}", holder);
+                return (
+                    false,
+                    $"Failed to query holder: {ex.Message}",
+                    new List<BoxView>()
+                );
+            }
+
+            if (!holderJobResult.Success)
+            {
+                return (
+                    false,
+                    holderJobResult.Message,
+                    new List<BoxView>()
+                );
+            }
+
+            var row = holderJobResult.ParsedResult.Rows.FirstOrDefault();
+
+            if (row is null)
+            {
+                return (
+                    false,
+                    "HolderJob record was not found.",
+                    new List<BoxView>()
+                );
+            }
+
+            var holdReasonCode = GetField(row, "HoldReason");
+            var holdComment = GetField(row, "HoldComment");
+            var hasHold = !string.IsNullOrWhiteSpace(holdReasonCode) || !string.IsNullOrWhiteSpace(holdComment);
+            //-- STEP 1: QUERY HOLDER HOLD INFO: END -------------------------------------//
+
+            if (!hasHold)
+            {
+                //-- NO ACTIVE HOLD FOUND: clear STATUS instead of deleting the row --------\\
+                var statusCleared = await _stackerSqlService.ClearFgiHolderAssignmentStatusAsync(holder, process);
+                if (!statusCleared)
+                {
+                    _logger.LogWarning(
+                        "[FGI DISASSOCIATE] Unable to clear HOLDER_ASSIGN status for holder={Holder}, process={Process}",
+                        holder,
+                        process);
+                }
+
+                _previewCache.Clear();
+
+                var noHoldGridView = await MapGridViewBoxData(clientKey);
+
+                return (
+                    true,
+                    $"{holder} has no active FEATS hold. Status cleared instead of disassociating.",
+                    noHoldGridView.Boxes
+                );
+            }
+
+            //-- STEP 2: RELEASE HOLDER: START --------------------------------------------\\
+            (bool Success, string Message) releaseResult;
+            try
+            {
+                releaseResult = await _featsService.ReleaseHolderAsync(
+                    holder: holder,
+                    holderType: null,
+                    comment: string.Empty,
+                    username: credentials.Username,
+                    password: credentials.Password);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[FGI DISASSOCIATE] ReleaseHolder threw for holder={Holder}", holder);
+                return (
+                    false,
+                    $"Failed to release holder: {ex.Message}",
+                    new List<BoxView>()
+                );
+            }
+
+            if (!releaseResult.Success)
+            {
+                return (
+                    false,
+                    releaseResult.Message,
+                    new List<BoxView>()
+                );
+            }
+            //-- STEP 2: RELEASE HOLDER: END -----------------------------------------------//
+
+            //-- STEP 3: MOVE TO RBF2 OPERATION: START -------------------------------------\\
+            (bool Success, string Message) moveOutResult;
+            try
+            {
+                moveOutResult = await _featsService.MoveOutAsync(
+                    holder: holder,
+                    holderType: null,
+                    resource: null,
+                    nextOp: rbf2Operation,
+                    username: credentials.Username,
+                    password: credentials.Password);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[FGI DISASSOCIATE] MoveOut to {Rbf2Operation} threw for holder={Holder}", rbf2Operation, holder);
+                moveOutResult = (false, $"MoveOut threw an exception: {ex.Message}");
+            }
+
+            var moveOutMessage = moveOutResult.Success
+                ? string.Empty
+                : moveOutResult.Message;
+            //-- STEP 3: MOVE TO RBF2 OPERATION: END ---------------------------------------//
+
+            //-- STEP 4: RE-APPLY SAVED HOLD: START ----------------------------------------\\
+            // If MoveOut failed above, we still attempt to re-apply the hold here as a
+            // safety net so the holder is never left un-held after being released in step 2.
+            (bool Success, string Message) holdResult;
+            try
+            {
+                holdResult = await _featsService.HoldHolderAsync(
+                    holder: holder,
+                    holderType: null,
+                    holdReasonCode: holdReasonCode,
+                    comment: holdComment,
+                    username: credentials.Username,
+                    password: credentials.Password);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[FGI DISASSOCIATE] HoldHolder re-apply threw for holder={Holder}", holder);
+                holdResult = (false, $"HoldHolder threw an exception: {ex.Message}");
+            }
+
+            if (!holdResult.Success)
+            {
+                var partialMessage = moveOutResult.Success
+                    ? $"Holder was moved to {rbf2Operation} but NOT re-held: {holdResult.Message}"
+                    : $"MoveOut failed ({moveOutMessage}) and the holder was NOT re-held: {holdResult.Message}";
+
+                return (
+                    false,
+                    partialMessage,
+                    new List<BoxView>()
+                );
+            }
+
+            if (!moveOutResult.Success)
+            {
+                return (
+                    false,
+                    $"MoveOut to {rbf2Operation} failed: {moveOutMessage}. Hold was re-applied at the current location.",
+                    new List<BoxView>()
+                );
+            }
+            //-- STEP 4: RE-APPLY SAVED HOLD: END ------------------------------------------//
+
+            //-- SQL DELETE for HOLDER_ASSIGN: START----------------------------------------\\
+            var deleted = await _stackerSqlService.DeleteFgiHoldHolderAssignmentAsync(holder, process);
+            if (!deleted)
+            {
+                _logger.LogWarning(
+                    "[FGI DISASSOCIATE] Unable to delete HOLDER_ASSIGN row for holder={Holder}, process={Process}",
+                    holder,
+                    process);
+            }
+
+            _previewCache.Clear();
+            //-- SQL DELETE for HOLDER_ASSIGN: END ------------------------------------------//
+
+            var gridViewResult = await MapGridViewBoxData(clientKey);
+
+            return (
+                true,
+                "Holder released, moved to RBF2, and re-held successfully.",
+                gridViewResult.Boxes
             );
         }
 
@@ -2016,6 +2708,10 @@ namespace WDC_STACKER.API.Aggregate
                 : "PWD";
         }
 
-
+        public async Task<List<CsvExportRow>> GetAllHolderAssignmentsForCsvAsync(string? clientKey)
+        {
+            var process = ResolveProcess(clientKey);
+            return await _stackerSqlService.GetAllHolderAssignmentsForCsvAsync(process);
+        }
     }
 }

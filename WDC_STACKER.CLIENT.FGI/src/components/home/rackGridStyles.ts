@@ -148,6 +148,20 @@ export const rackGridStyle = (boxCount: number, layerCount: number): CSSProperti
     alignItems: "stretch",
 });
 
+export const rackOverviewGridStyle = (
+    boxCount: number,
+    layerCount: number
+): CSSProperties => ({
+    display: "grid",
+    gridTemplateColumns: `52px repeat(${boxCount}, minmax(88px, 1fr))`,
+    gridTemplateRows: `32px repeat(${layerCount}, minmax(128px, auto))`,
+    columnGap: "8px",
+    rowGap: "28px",
+    width: "100%",
+    minWidth: `${52 + boxCount * 96}px`,
+    alignItems: "stretch",
+});
+
 export const cornerCellStyle: CSSProperties = {
     background: "transparent",
 };

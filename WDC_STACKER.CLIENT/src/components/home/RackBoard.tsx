@@ -37,13 +37,15 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
         () => boxes.find((box) => box.IsSuggestedTarget),
         [boxes]
     );
+    const suggestedTargetBoxNo = suggestedTarget?.BoxNo;
+    const suggestedTargetRackNum = suggestedTarget?.RackNum;
 
     useEffect(() => {
-        if (!suggestedTarget) {
+        if (suggestedTargetRackNum == null) {
             return;
         }
 
-        const rackElement = rackRefs.current[suggestedTarget.RackNum];
+        const rackElement = rackRefs.current[suggestedTargetRackNum];
 
         if (!rackElement) {
             return;
@@ -56,7 +58,7 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
                 inline: "nearest",
             });
         });
-    }, [suggestedTarget?.BoxNo, suggestedTarget?.RackNum]);
+    }, [suggestedTargetBoxNo, suggestedTargetRackNum]);
 
     if (rackCount === 0) {
         return <div style={emptyStateStyle}>No racks configured.</div>;

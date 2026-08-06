@@ -54,6 +54,7 @@ public sealed class FgiWithdrawalSourceRecordView
     public long RunningTotal { get; set; }
     public bool IsIncluded { get; set; }
     public string Status { get; set; } = string.Empty;
+    public bool WasReviewedForHold { get; set; }
 }
 
 public sealed class FgiWithdrawalRackView
@@ -68,6 +69,9 @@ public sealed class FgiWithdrawalBoxView
     public int LayerRowNum { get; set; }
     public int LayerColNum { get; set; }
     public List<FgiWithdrawalShipBoxView> ShipBoxes { get; set; } = [];
+    public string Grade { get; set; } = string.Empty;
+    public string PartNum { get; set; } = string.Empty;
+    public string PenNum { get; set; } = string.Empty;
 }
 
 public sealed class FgiWithdrawalShipBoxView
@@ -77,10 +81,19 @@ public sealed class FgiWithdrawalShipBoxView
     public int LayerRowNum { get; set; }
     public int LayerColNum { get; set; }
     public List<FgiWithdrawalHolderView> Holders { get; set; } = [];
+    public string Lec { get; set; } = string.Empty;
 }
 
 public sealed class FgiWithdrawalHolderView
 {
     public string Holder { get; set; } = string.Empty;
     public int Qty { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public string Factory { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+
+    // Populated by StackerAggregate.GetFgiWithdrawalLayoutAsync when a valid
+    // session token is available (FEATS-backed live check, same cache as the
+    // Job Scanning rack view). Additive alongside SQL-based Status.
+    public bool IsInSiteHold { get; set; }
 }

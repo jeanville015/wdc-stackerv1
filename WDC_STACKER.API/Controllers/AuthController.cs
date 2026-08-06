@@ -26,7 +26,12 @@ namespace WDC_STACKER.API.Controllers
             if (string.IsNullOrWhiteSpace(request.Username) ||
                 string.IsNullOrWhiteSpace(request.Password))
             {
-                return BadRequest(new { message = "Username and password are required." });
+                return BadRequest(new { message = "Incorrect login details" });
+            }
+
+            if (request.Username.Contains('\\') || request.Username.Contains('@'))
+            {
+                return BadRequest(new { message = "Incorrect login details" });
             }
 
             var result = await _aggregate.LoginAsync(request);

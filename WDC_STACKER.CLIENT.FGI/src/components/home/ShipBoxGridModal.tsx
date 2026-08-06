@@ -22,6 +22,7 @@ interface Props {
     selectedTargetShipBox: ShipBoxView | null;
     onTargetShipBoxSelected: (box: BoxView, shipBox: ShipBoxView) => void;
     onClose: () => void;
+    onDisassociateSuccess?: () => void;
 }
 
 const BLUE_DARK = "#0052cc";
@@ -34,14 +35,21 @@ const SEGMENT_CAP = 10;
 const isReleaseShipBox = (shipBox: ShipBoxView) =>
     shipBox.HasReleaseStatus || shipBox.ShipBoxStatus.trim().toUpperCase() === "RELEASE";
 
+const isInSiteHoldShipBox = (shipBox: ShipBoxView) =>
+    Boolean(shipBox.HasInSiteHold || (shipBox.InSiteHoldHolders?.length ?? 0) > 0);
+
 const getShipBoxCellStyle = (
     shipBox: ShipBoxView,
     isHighlighted: boolean
 ): CSSProperties => {
+    const isInSiteHold = isInSiteHoldShipBox(shipBox);
+
     return {
         ...getEmptyCellStyle(),
-        background: isReleaseShipBox(shipBox) ? GREEN_LIGHT : BLUE_LIGHT,
-        border: "1px solid #8bbcff",
+        background: isInSiteHold || shipBox.HasHeldHolder
+            ? "#ff4d4d"
+            : isReleaseShipBox(shipBox) ? GREEN_LIGHT : BLUE_LIGHT,
+        border: isInSiteHold ? "1px solid #a51f1f" : "1px solid #8bbcff",
         padding: "0.25rem",
         position: "relative",
         cursor: "pointer",
@@ -132,12 +140,15 @@ export default function ShipBoxGridModal({
     selectedTargetShipBox,
     onTargetShipBoxSelected,
     onClose,
+    onDisassociateSuccess,
 }: Props) {
     const { user } = useAuth();
+    const hasToken = Boolean(user?.token);
     const [shipBoxes, setShipBoxes] = useState<ShipBoxView[]>(box.ShipBoxes ?? []);
-    const [selectedShipBoxName, setSelectedShipBoxName] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [selectedShipBox, setSelectedShipBox] = useState<ShipBoxView | null>(null);
+    const [loading, setLoading] = useState(hasToken);
     const [error, setError] = useState("");
+    const displayError = error || (!hasToken ? "Login token is missing." : "");
 
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
     const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1);
@@ -145,11 +156,11 @@ export default function ShipBoxGridModal({
     useEffect(() => {
         if (!user?.token) return;
 
-        setLoading(true);
-        setError("");
-
         getShipBoxesApi(box.BoxNo, user.token, shipBoxSelectionEnabled)
-            .then(setShipBoxes)
+            .then((result) => {
+                setError("");
+                setShipBoxes(result);
+            })
             .catch((err: unknown) =>
                 setError(err instanceof Error ? err.message : "Unable to load ShipBoxes.")
             )
@@ -178,7 +189,22 @@ export default function ShipBoxGridModal({
             >
                 <div className="modal-content">
                     <div className="modal-header">
-                        <h5 className="modal-title">ShipBoxes: {box.BoxNo}</h5>
+                        <div className="stacker-modal-header-info">
+                            <h5 className="modal-title">Black Box: {box.BoxNo}</h5>
+
+                            <div className="stacker-detail-pills">
+                                <span className="stacker-detail-pill">
+                                    <strong>Model (ProductName):</strong> {box.ProductName}
+                                </span>
+                                <span className="stacker-detail-pill">
+                                    <strong>PartNum:</strong> {box.PartNum}
+                                </span>
+                                <span className="stacker-detail-pill">
+                                    <strong>PenNum:</strong> {box.PenNum}
+                                </span>
+                            </div>
+                        </div>
+
                         <button
                             type="button"
                             className="btn-close"
@@ -188,7 +214,7 @@ export default function ShipBoxGridModal({
                     </div>
 
                     <div className="modal-body">
-                        {error && <div className="alert alert-danger">{error}</div>}
+                        {displayError && <div className="alert alert-danger">{displayError}</div>}
 
                         {loading ? (
                             <div className="text-center p-4">
@@ -231,7 +257,7 @@ export default function ShipBoxGridModal({
                                                                 return;
                                                             }
 
-                                                            setSelectedShipBoxName(shipBox.ShipBoxName);
+                                                            setSelectedShipBox(shipBox);
                                                         }}
                                                         style={
                                                             shipBox
@@ -250,6 +276,15 @@ export default function ShipBoxGridModal({
                                                                     shipBox={shipBox}
                                                                     maxItems={maxItemPerShipBox}
                                                                 />
+
+                                                                {isInSiteHoldShipBox(shipBox) && (
+                                                                    <span
+                                                                        className="rack-box-in-site-hold-badge"
+                                                                        title={`In-site hold: ${(shipBox.InSiteHoldHolders ?? []).join(", ")}`}
+                                                                    >
+                                                                        IN-SITE
+                                                                    </span>
+                                                                )}
 
                                                                 {isHighlighted && (
                                                                     <>
@@ -270,11 +305,12 @@ export default function ShipBoxGridModal({
                             </div>
                         )}
 
-                        {selectedShipBoxName && (
+                        {selectedShipBox && (
                             <BoxAssignmentsModal
                                 boxName={box.BoxNo}
-                                shipBoxName={selectedShipBoxName}
-                                onClose={() => setSelectedShipBoxName(null)}
+                                shipBox={selectedShipBox}
+                                onClose={() => setSelectedShipBox(null)}
+                                onDisassociateSuccess={onDisassociateSuccess}
                             />
                         )}
                     </div>

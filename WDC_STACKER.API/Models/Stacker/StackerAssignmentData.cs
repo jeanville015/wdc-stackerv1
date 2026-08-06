@@ -24,14 +24,18 @@
     }
 
     public class HolderAssignInsertData
-    { 
+    {
         public string Holder { get; set; } = string.Empty;
         public string BoxName { get; set; } = string.Empty;
+        public string PartNum { get; set; } = string.Empty;
+        public string? PenNum { get; set; }
         public string ProductName { get; set; } = string.Empty;
-        public string Lec { get; set; } = string.Empty;
+        public string? Lec { get; set; }
+        public int? Qty { get; set; }
         public string Factory { get; set; } = string.Empty;
         public string ShipBoxName { get; set; } = string.Empty;
         public string Process { get; set; } = string.Empty;
+        public string BinName { get; set; } = string.Empty;
         public string UpdateBy { get; set; } = string.Empty;
         public DateTime UpdateTs { get; set; }
     }

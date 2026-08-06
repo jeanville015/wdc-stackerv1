@@ -18,16 +18,16 @@ export default function BoxAssignmentsModal({
     onBoxesChanged,
 }: Props) {
     const { user } = useAuth();
+    const hasToken = Boolean(user?.token);
     const [rows, setRows] = useState<BoxAssignment[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(hasToken);
     const [error, setError] = useState("");
+    const displayError = error || (!hasToken ? "Login token is missing." : "");
     const [confirmRow, setConfirmRow] = useState<BoxAssignment | null>(null);
     const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         if (!user?.token) {
-            setError("Login token is missing.");
-            setLoading(false);
             return;
         }
 
@@ -92,8 +92,8 @@ export default function BoxAssignmentsModal({
                     </div>
 
                     <div className="modal-body">
-                        {error && (
-                            <div className="alert alert-danger">{error}</div>
+                        {displayError && (
+                            <div className="alert alert-danger">{displayError}</div>
                         )}
 
                         {loading ? (

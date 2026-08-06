@@ -25,13 +25,15 @@ namespace WDC_STACKER.API.Aggregate
         private readonly ILogger<AuthProjectionAggregate> _logger;
         private readonly FeatsCredentialStore _featsCredentialStore;
         private readonly StackerAggregate _stackerAggregate;
+        private readonly IConfiguration _config;
 
-        public AuthProjectionAggregate(ActiveDirectoryService adService, ILogger<AuthProjectionAggregate> logger, FeatsCredentialStore featsCredentialStore, StackerAggregate stackerAggregate)
+        public AuthProjectionAggregate(ActiveDirectoryService adService, ILogger<AuthProjectionAggregate> logger, FeatsCredentialStore featsCredentialStore, StackerAggregate stackerAggregate, IConfiguration config)
         {
             _adService = adService;
             _logger = logger;
             _featsCredentialStore = featsCredentialStore;
             _stackerAggregate = stackerAggregate;
+            _config = config;
         }
 
         public async Task<LoginResponse> LoginAsync(LoginRequest request)
@@ -58,7 +60,9 @@ namespace WDC_STACKER.API.Aggregate
             // 2. Generate a session token
             //    TODO: replace with a signed JWT once real AD is wired in.
             var token = GenerateSessionToken();
-            _featsCredentialStore.Store(token, request.Username, request.Password);
+            var expirationMinutes = int.Parse(_config["Jwt:ExpirationMinutes"] ?? "480");
+            var expiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes);
+            _featsCredentialStore.Store(token, request.Username, request.Password, expiresAt);
             _logger.LogInformation("Login successful for user={Username}", adResult.Username);
 
             var canAccessConfiguration = await _stackerAggregate.CanAccessConfigurationAsync(request.Username, request.Password);
@@ -70,7 +74,8 @@ namespace WDC_STACKER.API.Aggregate
                 Token = token,
                 Username = adResult.DisplayName,
                 CanAccessConfiguration = canAccessConfiguration,
-                Message = "Login successful"
+                Message = "Login successful",
+                ExpiresAt = expiresAt
             };
         }
 

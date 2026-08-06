@@ -42,31 +42,5 @@ namespace WDC_STACKER.API.Services
                 return (false, $"AHS SliderCheck2 failed: {ex.Message}", string.Empty);
             }
         }
-
-        /// <summary>
-        /// Calls AHS CheckHold to check if holder is on hold
-        /// </summary>
-        public async Task<(bool Success, string Message, bool IsOnHold)> CheckHoldAsync(string holder, string currentOp)
-        {
-            _logger.LogInformation("AHS CheckHold -> holder={Holder}, currentOp={CurrentOp}", holder, currentOp);
-
-            try
-            {
-                using var client = CreateClient();
-                var result = await client.CheckHoldAsync(holder, currentOp);
-                
-                // Parse the result - assuming the service returns a string indicating hold status
-                var isOnHold = !string.IsNullOrWhiteSpace(result) && 
-                    (result.Equals("HOLD", StringComparison.OrdinalIgnoreCase) ||
-                     result.Contains("HOLD", StringComparison.OrdinalIgnoreCase));
-
-                return (true, result, isOnHold);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AHS CheckHold failed for holder={Holder}", holder);
-                return (false, $"AHS CheckHold failed: {ex.Message}", false);
-            }
-        }
     }
 }

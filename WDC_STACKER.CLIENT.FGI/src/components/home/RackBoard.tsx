@@ -23,6 +23,7 @@ interface RackBoardProps {
     selectedTargetShipBox: ShipBoxView | null;
     recentlyAssignedBoxNo?: string | null;
     onTargetShipBoxSelected: (box: BoxView, shipBox: ShipBoxView) => void;
+    onDisassociateSuccess?: () => void;
 }
 
 const emptyStateStyle: CSSProperties = {
@@ -43,6 +44,7 @@ export default function RackBoard({
     selectedTargetShipBox,
     onTargetShipBoxSelected,
     recentlyAssignedBoxNo,
+    onDisassociateSuccess,
 }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
@@ -68,7 +70,7 @@ export default function RackBoard({
                         recentlyAssignedBoxNo={recentlyAssignedBoxNo}
                         rackNumber={rackNumber}
                         layerCount={layerCount}
-                        boxCount={boxCount} 
+                        boxCount={boxCount}
                         shipBoxLayerCount={shipBoxLayerCount}
                         shipBoxBoxCount={shipBoxBoxCount}
                         maxItemPerShipBox={maxItemPerShipBox}
@@ -77,6 +79,7 @@ export default function RackBoard({
                         selectedTargetBox={selectedTargetBox}
                         selectedTargetShipBox={selectedTargetShipBox}
                         onTargetShipBoxSelected={onTargetShipBoxSelected}
+                        onDisassociateSuccess={onDisassociateSuccess}
                     />
                 );
             })}

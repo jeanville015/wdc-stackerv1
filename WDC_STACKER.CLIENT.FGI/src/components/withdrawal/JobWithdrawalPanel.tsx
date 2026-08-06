@@ -24,6 +24,7 @@ interface Props {
 
 export default function JobWithdrawalPanel({ config }: Props) {
     const { user } = useAuth();
+    const hasToken = Boolean(user?.token);
 
     const [requests, setRequests] = useState<FgiWithdrawalRequest[]>([]);
     const [selectedRequest, setSelectedRequest] = useState<FgiWithdrawalRequest | null>(null);
@@ -43,7 +44,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
         useState("");
     const [rack, setRack] = useState<FgiWithdrawalRack | null>(null);
 
-    const [requestsLoading, setRequestsLoading] = useState(true);
+    const [requestsLoading, setRequestsLoading] = useState(hasToken);
     const [layoutLoading, setLayoutLoading] = useState(false);
 
     const [acknowledgingRequestId, setAcknowledgingRequestId] =
@@ -51,6 +52,8 @@ export default function JobWithdrawalPanel({ config }: Props) {
     const [acknowledgeError, setAcknowledgeError] = useState("");
 
     const [requestsError, setRequestsError] = useState("");
+    const displayRequestsError =
+        requestsError || (!hasToken ? "Login token is missing." : "");
     const [layoutError, setLayoutError] = useState("");
 
     /*
@@ -61,19 +64,15 @@ export default function JobWithdrawalPanel({ config }: Props) {
 
     useEffect(() => {
         if (!user?.token) {
-            setRequestsLoading(false);
-            setRequestsError("Login token is missing.");
             return;
         }
 
         let cancelled = false;
 
-        setRequestsLoading(true);
-        setRequestsError("");
-
         getFgiWithdrawalRequestsApi(user.token)
             .then((result) => {
                 if (!cancelled) {
+                    setRequestsError("");
                     setRequests(result);
                 }
             })
@@ -111,11 +110,6 @@ export default function JobWithdrawalPanel({ config }: Props) {
         setRack(null);
         setLayoutError("");
 
-        if (!request.Lec.trim()) {
-            setLayoutError("The selected request does not contain an LEC.");
-            return;
-        }
-
         const selectionSequence = ++selectionSequenceRef.current;
 
         setLayoutLoading(true);
@@ -123,6 +117,9 @@ export default function JobWithdrawalPanel({ config }: Props) {
         try {
             const result = await getFgiWithdrawalLayoutApi(
                 request.Lec,
+                request.PenNum,
+                request.SliderPartNumber,
+                request.Grade,
                 user.token
             );
 
@@ -210,13 +207,6 @@ export default function JobWithdrawalPanel({ config }: Props) {
             return;
         }
 
-        if (!request.Lec.trim()) {
-            setDisassociationError(
-                "The selected request does not contain an LEC."
-            );
-            return;
-        }
-
         if (request.Total === null) {
             setDisassociationError(
                 "The selected request does not contain a TOTAL."
@@ -234,6 +224,9 @@ export default function JobWithdrawalPanel({ config }: Props) {
                     request.Lec,
                     request.PenNum,
                     request.Total,
+                    request.SliderPartNumber,
+                    request.Grade,
+                    request.ActualOutput ?? 0,
                     user.token
                 );
 
@@ -307,11 +300,15 @@ export default function JobWithdrawalPanel({ config }: Props) {
          * deletion because the transaction already committed.
          */
         setLayoutLoading(true);
+        setRequestsLoading(true);
 
         try {
             const refreshedRack =
                 await getFgiWithdrawalLayoutApi(
                     modal.request.Lec,
+                    modal.request.PenNum,
+                    modal.request.SliderPartNumber,
+                    modal.request.Grade,
                     user.token
                 );
 
@@ -324,6 +321,25 @@ export default function JobWithdrawalPanel({ config }: Props) {
         } finally {
             setLayoutLoading(false);
         }
+
+        try {
+            const refreshedRequests = await getFgiWithdrawalRequestsApi(user.token);
+            setRequests(refreshedRequests);
+
+            // Update selected request if it still exists
+            if (selectedRequest) {
+                const updatedSelectedRequest = refreshedRequests.find(
+                    (r) => r.RequestId === selectedRequest.RequestId
+                );
+                if (updatedSelectedRequest) {
+                    setSelectedRequest(updatedSelectedRequest);
+                }
+            }
+        } catch {
+            // Request refresh failure should not block the success message
+        } finally {
+            setRequestsLoading(false);
+        }
     };
 
     return (
@@ -333,7 +349,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                     rows={requests}
                     selectedRequest={selectedRequest}
                     loading={requestsLoading}
-                    error={requestsError}
+                    error={displayRequestsError}
                     onRequestSelected={handleRequestSelected}
                 />
 
@@ -353,7 +369,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                             onAcknowledge={
                                 handleRequestAcknowledged
                             }
-                            onDisassociate={
+                            onWithdraw={
                                 handleDisassociationRequested
                             }
                             actionSuccess={disassociationSuccess}
@@ -396,7 +412,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                         !layoutError &&
                         !rack && (
                             <div className="withdrawal-placeholder">
-                                No rack mapping was found for the selected LEC.
+                                No holders are available for the selected request.
                             </div>
                         )}
 
@@ -411,6 +427,9 @@ export default function JobWithdrawalPanel({ config }: Props) {
                             shipBoxColumnCount={
                                 config["BOX_COUNT-SHIPBOX"]
                             }
+                            maxItemPerShipBox={
+                                config["MAX_ITEM_PER_BOX-SHIPBOX"]
+                            }
                         />
                     )}
                 </section>
@@ -419,7 +438,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                 <WithdrawalDisassociationModal
                     request={disassociationModal.request}
                     preview={disassociationModal.preview}
-                    onDisassociate={handleDisassociationConfirmed}
+                    onWithdraw={handleDisassociationConfirmed}
                     onClose={() =>
                         setDisassociationModal(null)
                     }
