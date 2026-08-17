@@ -1,12 +1,13 @@
 import { useState, type KeyboardEvent, type CSSProperties } from "react";
 import { scanApi, assignApi } from "../api/stackerApi";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import type { BoxView } from "../types/stacker";
 import { STACKER_PROCESS } from "../config/processConfig";
 
-interface LeftNavProps {
+interface StackerOperationControlsProps {
     onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
     onAssignedBoxConfirmed?: (boxNo: string) => void;
+    onSelectedTargetBoxChanged?: (box: BoxView | null, isExistingLocation?: boolean) => void;
 }
 
 interface FeedbackState {
@@ -14,7 +15,7 @@ interface FeedbackState {
     type: "success" | "error" | "idle";
 }
 
-export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssignedBoxConfirmed, }: LeftNavProps) {
+export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssignedBoxConfirmed, onSelectedTargetBoxChanged }: StackerOperationControlsProps) {
     const { user } = useAuth(); 
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
@@ -40,6 +41,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
         if (!user?.token) {
             setAssignEnabled(false);
             setSuggestedTargetBox(null);
+            onSelectedTargetBoxChanged?.(null, false);
             showFeedback("Login token is missing. Please sign in again.", "error");
             return;
         }
@@ -47,6 +49,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
         setScanLoading(true);
         setAssignEnabled(false);
         setSuggestedTargetBox(null);
+        onSelectedTargetBoxChanged?.(null, false);
 
         try {
             const result = await scanApi(holder, user.token);
@@ -57,9 +60,14 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
 
             if (result.Success && result.CanAssign && suggestedTarget) {
                 setSuggestedTargetBox(suggestedTarget);
+                onSelectedTargetBoxChanged?.(suggestedTarget, false);
                 setAssignEnabled(true);
                 showFeedback(result.Message || "Validation Pass!", "success");
             } else {
+                // Holder may already be assigned - locate and highlight its
+                // existing box in the rack without enabling assignment.
+                const existingBox = boxes.find((box) => box.IsSuggestedTarget) ?? null;
+                onSelectedTargetBoxChanged?.(existingBox, true);
                 setAssignEnabled(false);
                 showFeedback(result.Message || "Validation failed.", "error");
             }
@@ -129,6 +137,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
                 setScanValue("");
                 setAssignEnabled(false);
                 setSuggestedTargetBox(null);
+                onSelectedTargetBoxChanged?.(null, false);
             }
         } catch (err) {
             showFeedback(
@@ -176,6 +185,16 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
             }}
         > 
 
+            <h2
+                className="fw-bold mb-0"
+                style={{
+                    fontSize: "0.95rem",
+                    color: "#172b4d",
+                }}
+            >
+                Scanning / Assignment
+            </h2>
+
             <div
                 style={{
                     background: "#f4f5f7",
@@ -196,7 +215,9 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
                         textTransform: "uppercase",
                         color: "#172b4d",
                     }}
-                />
+                >
+                    Scan Holder
+                </label>
 
                 <input
                     id="scan-input"
@@ -209,6 +230,7 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
                         setAssignEnabled(false);
                         setSuggestedTargetBox(null);
                         setAssignedBoxMessage("");
+                        onSelectedTargetBoxChanged?.(null, false);
                     }}
                     onKeyDown={handleKeyDown}
                     disabled={scanLoading}

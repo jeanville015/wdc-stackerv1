@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { disassociateFgiHolder, getShipBoxAssignmentsApi } from "../../api/stackerApi";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import type { BoxAssignment, ShipBoxView } from "../../types/stacker";
+import { formatShipBoxName } from "../../utils/nameTransformers";
 
 interface Props {
     boxName: string;
     shipBox: ShipBoxView;
+    productName?: string | null;
+    partNum?: string | null;
+    penNum?: string | null;
     onClose: () => void;
     onDisassociateSuccess?: () => void;
 }
@@ -13,15 +17,16 @@ interface Props {
 export default function BoxAssignmentsModal({
     boxName,
     shipBox,
+    productName,
+    partNum,
+    penNum,
     onClose,
     onDisassociateSuccess,
 }: Props) {
     const { user } = useAuth();
-    const hasToken = Boolean(user?.token);
     const [rows, setRows] = useState<BoxAssignment[]>([]);
-    const [loading, setLoading] = useState(hasToken);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const displayError = error || (!hasToken ? "Login token is missing." : "");
     const [disassociateHolder, setDisassociateHolder] = useState<BoxAssignment | null>(null);
     const [showSuccess, setShowSuccess] = useState(false);
     const [successMessage, setSuccessMessage] = useState("");
@@ -29,22 +34,46 @@ export default function BoxAssignmentsModal({
     const [disassociateError, setDisassociateError] = useState("");
 
     const shipBoxName = shipBox.ShipBoxName;
+    const token = user?.token;
+    const authError = token ? "" : "Login token is missing.";
+    const displayError = authError || error;
+    const displayLoading = Boolean(token) && loading;
 
     useEffect(() => {
-        if (!user?.token) {
+        if (!token) {
             return;
         }
 
-        getShipBoxAssignmentsApi(boxName, shipBoxName, user.token)
-            .then((result) => {
+        let isCancelled = false;
+
+        Promise.resolve()
+            .then(() => {
+                if (isCancelled) return undefined;
+
+                setLoading(true);
                 setError("");
-                setRows(result);
+                return getShipBoxAssignmentsApi(boxName, shipBoxName, token);
             })
-            .catch((err: unknown) =>
-                setError(err instanceof Error ? err.message : "Load failed.")
-            )
-            .finally(() => setLoading(false));
-    }, [boxName, shipBoxName, user?.token]);
+            .then((assignments) => {
+                if (!isCancelled && assignments) {
+                    setRows(assignments);
+                }
+            })
+            .catch((err: unknown) => {
+                if (!isCancelled) {
+                    setError(err instanceof Error ? err.message : "Load failed.");
+                }
+            })
+            .finally(() => {
+                if (!isCancelled) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [boxName, shipBoxName, token]);
 
     return (
         <>
@@ -52,23 +81,47 @@ export default function BoxAssignmentsModal({
                 className="modal d-block"
                 role="dialog"
                 aria-modal="true"
+                aria-labelledby="box-assignments-modal-title"
                 style={{ background: "rgba(9, 30, 66, 0.55)", zIndex: 1060 }}
                 onMouseDown={onClose}
             >
                 <div
-                    className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"
+                    className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable box-assignments-dialog"
                     onMouseDown={(event) => event.stopPropagation()}
                 >
-                    <div className="modal-content">
-                        <div className="modal-header">
-                            <div className="stacker-modal-header-info">
-                                <h5 className="modal-title">
-                                    Ship Box: {shipBoxName}
+                    <div className="modal-content box-assignments-modal">
+                        <div className="modal-header box-assignments-modal-header">
+                            <div className="shipbox-modal-heading">
+                                <span className="shipbox-modal-eyebrow">
+                                    Ship Box
+                                </span>
+
+                                <h5
+                                    id="box-assignments-modal-title"
+                                    className="modal-title"
+                                >
+                                    {formatShipBoxName(shipBoxName)}
                                 </h5>
 
-                                <div className="stacker-detail-pills">
-                                    <span className="stacker-detail-pill">
-                                        <strong>LEC:</strong> {shipBox.Lec}
+                                <div className="shipbox-modal-metadata">
+                                    <span>
+                                        <strong>Model:</strong>
+                                        {productName ?? "—"}
+                                    </span>
+
+                                    <span>
+                                        <strong>PartNum:</strong>
+                                        {partNum ?? "—"}
+                                    </span>
+
+                                    <span>
+                                        <strong>PenNum:</strong>
+                                        {penNum ?? "—"}
+                                    </span>
+
+                                    <span>
+                                        <strong>LEC:</strong>
+                                        {shipBox.Lec || "—"}
                                     </span>
                                 </div>
                             </div>
@@ -84,60 +137,95 @@ export default function BoxAssignmentsModal({
                         <div className="modal-body">
                             {displayError && <div className="alert alert-danger">{displayError}</div>}
 
-                            {loading ? (
+                            {displayLoading ? (
                                 <div className="text-center p-4">
                                     <span className="spinner-border" />
                                 </div>
                             ) : (
-                                <div className="table-responsive">
-                                    <table className="table table-bordered table-hover align-middle">
-                                        <thead className="table-light">
+                                <div className="table-responsive box-assignments-table-wrap">
+                                    <table className="table table-bordered align-middle text-center box-assignments-table">
+                                        <thead>
                                             <tr>
                                                 <th>Holder</th>
-                                                <th>Product Name</th>
+                                                <th>Job</th>
+                                                <th>Qty</th>
                                                 <th>Factory</th>
                                                 <th>LEC</th>
-                                                <th>Partnum</th>
-                                                <th>Pennum</th>
                                                 <th>Status</th>
                                                 <th>Action</th>
                                             </tr>
                                         </thead>
+
                                         <tbody>
-                                            {rows.map((row) => (
-                                                <tr
-                                                    key={row.Holder}
-                                                    className={
-                                                        row.Status === "HOLD"
-                                                            ? "table-danger"
-                                                            : ""
-                                                    }
-                                                >
-                                                    <td>{row.Holder}</td>
-                                                    <td>{row.ProductName}</td>
-                                                    <td>{row.Factory}</td>
-                                                    <td>{row.Lec}</td>
-                                                    <td>{row.Partnum}</td>
-                                                    <td>{row.Pennum}</td>
-                                                    <td>{row.Status}</td>
-                                                    <td>
-                                                        {row.Status === "HOLD" && (
-                                                            <button
-                                                                type="button"
-                                                                className="btn btn-danger btn-sm"
-                                                                onClick={() => setDisassociateHolder(row)}
-                                                            >
-                                                                Disassociate
-                                                            </button>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {rows.map((row) => {
+                                                const isHeld =
+                                                    (row.Status ?? "").trim().toUpperCase() ===
+                                                    "HOLD";
+
+                                                return (
+                                                    <tr
+                                                        key={row.Holder}
+                                                        className={
+                                                            isHeld
+                                                                ? "box-assignment-row--held"
+                                                                : undefined
+                                                        }
+                                                    >
+                                                        <td className="box-assignment-holder">
+                                                            {row.Holder}
+                                                        </td>
+
+                                                        <td>{row.Job?.trim() || "—"}</td>
+
+                                                        <td>{row.Qty ?? "—"}</td>
+
+                                                        <td>{row.Factory || "—"}</td>
+
+                                                        <td>{row.Lec || "—"}</td>
+
+                                                        <td>
+                                                            {isHeld ? (
+                                                                <span className="box-assignment-hold-badge">
+                                                                    HOLD
+                                                                </span>
+                                                            ) : (
+                                                                <span className="box-assignment-empty-value">
+                                                                    —
+                                                                </span>
+                                                            )}
+                                                        </td>
+
+                                                        <td>
+                                                            {isHeld ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="btn btn-outline-danger btn-sm box-assignment-disassociate"
+                                                                    aria-label={`Disassociate holder ${row.Holder}`}
+                                                                    onClick={() =>
+                                                                        setDisassociateHolder(row)
+                                                                    }
+                                                                >
+                                                                    <i
+                                                                        className="fa-solid fa-link-slash"
+                                                                        aria-hidden="true"
+                                                                    />
+
+                                                                    <span>Disassociate</span>
+                                                                </button>
+                                                            ) : (
+                                                                <span className="box-assignment-empty-value">
+                                                                    —
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
 
                                             {rows.length === 0 && (
                                                 <tr>
                                                     <td
-                                                        colSpan={8}
+                                                        colSpan={7}
                                                         className="text-center text-muted p-4"
                                                     >
                                                         No assignments found.

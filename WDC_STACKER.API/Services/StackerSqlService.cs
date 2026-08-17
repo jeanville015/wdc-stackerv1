@@ -227,7 +227,9 @@ public class StackerSqlService
 
             MAX(boxMeta.[PENNUM]) AS [PENNUM],
 
-            MAX(boxMeta.[PRODUCTNAME]) AS [PRODUCTNAME]
+            MAX(boxMeta.[PRODUCTNAME]) AS [PRODUCTNAME],
+
+            MAX(boxMeta.[CAMVERSION]) AS [CAMVERSION]
 
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] bd
 
@@ -247,7 +249,9 @@ public class StackerSqlService
 
                 MAX(NULLIF(LTRIM(RTRIM([PENNUM])), '')) AS [PENNUM],
 
-                MAX(NULLIF(LTRIM(RTRIM([PRODUCTNAME])), '')) AS [PRODUCTNAME]
+                MAX(NULLIF(LTRIM(RTRIM([PRODUCTNAME])), '')) AS [PRODUCTNAME],
+
+                MAX(NULLIF(LTRIM(RTRIM([CAMVERSION])), '')) AS [CAMVERSION]
 
             FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
 
@@ -273,8 +277,15 @@ public class StackerSqlService
 
                 ) = 1
 
-                AND
+                AND COUNT(*) = COUNT(NULLIF(LTRIM(RTRIM([CAMVERSION])), ''))
 
+                AND COUNT(
+
+                    DISTINCT UPPER(NULLIF(LTRIM(RTRIM([CAMVERSION])), ''))
+
+                ) = 1
+
+                AND
                 (
 
                     COUNT(NULLIF(LTRIM(RTRIM([PENNUM])), '')) = 0
@@ -371,6 +382,12 @@ public class StackerSqlService
 
                     : Convert.ToString(reader["PRODUCTNAME"])?.Trim(),
 
+                CamVersion = reader["CAMVERSION"] is DBNull
+
+                    ? null
+
+                    : Convert.ToString(reader["CAMVERSION"])?.Trim(),
+
             });
 
         }
@@ -419,6 +436,8 @@ public class StackerSqlService
 
             END AS [LEC],
 
+            MAX(NULLIF(LTRIM(RTRIM(ha.[CAMVERSION])), '')) AS [CAMVERSION],
+
             COUNT(ha.[BOXNAME]) AS ShipBoxListCount,
 
             CAST(
@@ -435,7 +454,15 @@ public class StackerSqlService
 
                 ELSE 0
 
-            END AS HasHeldHolder
+            END AS HasHeldHolder,
+
+            STRING_AGG(
+
+                CASE WHEN UPPER(LTRIM(RTRIM(ha.[STATUS]))) = 'HOLD' THEN '1' ELSE '0' END,
+
+                ','
+
+            ) WITHIN GROUP (ORDER BY ha.[HOLDER]) AS HeldHolderFlags
 
         FROM [BOXMANAGEMENT].[BOX].[SHIPBOXDETAILS] sbd
 
@@ -497,6 +524,24 @@ public class StackerSqlService
 
             var shipBoxStatus = Convert.ToString(reader["SHIPBOXSTATUS"])?.Trim() ?? string.Empty;
 
+            var heldHolderFlags = reader["HeldHolderFlags"] is DBNull
+
+                ? string.Empty
+
+                : Convert.ToString(reader["HeldHolderFlags"]) ?? string.Empty;
+
+            var heldHolderPositions = heldHolderFlags
+
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+
+                .Select((flag, index) => (flag, index))
+
+                .Where(item => item.flag == "1")
+
+                .Select(item => item.index)
+
+                .ToList();
+
 
 
             results.Add(new ShipBoxView
@@ -511,6 +556,12 @@ public class StackerSqlService
 
                 Lec = Convert.ToString(reader["LEC"])?.Trim() ?? string.Empty,
 
+                CamVersion = reader["CAMVERSION"] is DBNull
+
+                    ? null
+
+                    : Convert.ToString(reader["CAMVERSION"])?.Trim(),
+
                 ShipBoxNum = Convert.ToInt32(reader["SHIPBOXNUM"]),
 
                 LayerRowNum = Convert.ToInt32(reader["LAYERROWNUM"]),
@@ -523,7 +574,9 @@ public class StackerSqlService
 
                 HasReleaseStatus = string.Equals(shipBoxStatus, "RELEASE", StringComparison.OrdinalIgnoreCase),
 
-                HasHeldHolder = Convert.ToBoolean(reader["HasHeldHolder"])
+                HasHeldHolder = Convert.ToBoolean(reader["HasHeldHolder"]),
+
+                HeldHolderPositions = heldHolderPositions
 
             });
 
@@ -549,7 +602,9 @@ public class StackerSqlService
 
             LTRIM(RTRIM([BOXNAME])) AS [BOXNAME],
 
-            LTRIM(RTRIM([SHIPBOXNAME])) AS [SHIPBOXNAME]
+            LTRIM(RTRIM([SHIPBOXNAME])) AS [SHIPBOXNAME],
+
+            LTRIM(RTRIM([CAMVERSION])) AS [CAMVERSION]
 
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
 
@@ -603,7 +658,11 @@ public class StackerSqlService
 
                 BoxNo = Convert.ToString(reader["BOXNAME"])?.Trim() ?? string.Empty,
 
-                ShipBoxName = Convert.ToString(reader["SHIPBOXNAME"])?.Trim() ?? string.Empty
+                ShipBoxName = Convert.ToString(reader["SHIPBOXNAME"])?.Trim() ?? string.Empty,
+
+                CamVersion = reader["CAMVERSION"] is DBNull
+                    ? null
+                    : Convert.ToString(reader["CAMVERSION"])?.Trim()
 
             });
 
@@ -1765,11 +1824,11 @@ public class StackerSqlService
 
         INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
 
-            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [UPDATEBY], [UPDATETS])
+            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION], [JOB], [QTY], [STATUS], [UPDATEBY], [UPDATETS])
 
         VALUES
 
-            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @GRADE, @UPDATEBY, @UPDATETS);
+            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @GRADE, @CAMVERSION, @JOB, @QTY, @STATUS, @UPDATEBY, @UPDATETS);
 
         """;
 
@@ -1792,6 +1851,19 @@ public class StackerSqlService
         command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = data.Process;
 
         command.Parameters.Add("@GRADE", SqlDbType.VarChar, 50).Value = data.BinName;
+
+        command.Parameters.Add("@CAMVERSION", SqlDbType.VarChar, 10).Value =
+
+            string.IsNullOrWhiteSpace(data.CamVersion) ? DBNull.Value : data.CamVersion.Trim();
+
+        command.Parameters.Add("@JOB", SqlDbType.VarChar, 50).Value =
+            string.IsNullOrWhiteSpace(data.Job) ? DBNull.Value : data.Job.Trim();
+
+        command.Parameters.Add("@QTY", SqlDbType.Int).Value =
+            data.Qty.HasValue ? data.Qty.Value : DBNull.Value;
+
+        command.Parameters.Add("@STATUS", SqlDbType.VarChar, 20).Value =
+            string.IsNullOrWhiteSpace(data.Status) ? DBNull.Value : data.Status.Trim();
 
         command.Parameters.Add("@UPDATEBY", SqlDbType.VarChar, 50).Value = data.UpdateBy;
 
@@ -1869,6 +1941,111 @@ public class StackerSqlService
 
 
 
+    /// <summary>
+    /// Resolves the CamVersion previously stored (via job scanning/batching)
+    /// for a holder in HOLDER_ASSIGN. Used by the withdrawal flow so every
+    /// downstream FEATS transaction (checkhold/addjob/moveout) targets the
+    /// correct cam-version base URL.
+    /// </summary>
+    public async Task<string?> GetHolderCamVersionAsync(string holder, string process)
+
+    {
+
+        const string sql = """
+
+        SELECT TOP 1 [CAMVERSION]
+
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+
+        WHERE [HOLDER] = @HOLDER
+
+          AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS;
+
+        """;
+
+
+
+        await using var connection = new SqlConnection(_connectionString);
+
+        await using var command = new SqlCommand(sql, connection);
+
+
+
+        command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder.Trim();
+
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
+
+
+
+        await connection.OpenAsync();
+
+
+
+        var result = await command.ExecuteScalarAsync();
+
+        return result is null || result is DBNull
+            ? null
+            : Convert.ToString(result)?.Trim();
+
+    }
+
+
+
+    /// <summary>
+    /// Resolves the CamVersion of a ShipBox by looking at the CAMVERSION of
+    /// any holder already assigned to it (established from the first holder
+    /// scanned into the shipbox during batching/withdrawal).
+    /// </summary>
+    public async Task<string?> GetShipBoxCamVersionAsync(string boxName, string shipBoxName, string process)
+
+    {
+
+        const string sql = """
+
+        SELECT TOP 1 [CAMVERSION]
+
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+
+        WHERE [BOXNAME] = @BOXNAME
+
+          AND [SHIPBOXNAME] = @SHIPBOXNAME
+
+          AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS
+
+          AND NULLIF(LTRIM(RTRIM([CAMVERSION])), '') IS NOT NULL;
+
+        """;
+
+
+
+        await using var connection = new SqlConnection(_connectionString);
+
+        await using var command = new SqlCommand(sql, connection);
+
+
+
+        command.Parameters.Add("@BOXNAME", SqlDbType.VarChar, 50).Value = boxName.Trim();
+
+        command.Parameters.Add("@SHIPBOXNAME", SqlDbType.VarChar, 10).Value = shipBoxName.Trim();
+
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
+
+
+
+        await connection.OpenAsync();
+
+
+
+        var result = await command.ExecuteScalarAsync();
+
+        return result is null || result is DBNull
+            ? null
+            : Convert.ToString(result)?.Trim();
+
+    }
+
+
+
     public async Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName, string process)
 
     {
@@ -1878,6 +2055,10 @@ public class StackerSqlService
         SELECT
 
             [HOLDER],
+
+            [JOB],
+
+            [QTY],
 
             [PRODUCTNAME],
 
@@ -1931,6 +2112,10 @@ public class StackerSqlService
 
                 Holder = Convert.ToString(reader["HOLDER"])?.Trim() ?? string.Empty,
 
+                Job = reader["JOB"] is DBNull ? null : Convert.ToString(reader["JOB"])?.Trim(),
+
+                Qty = reader["QTY"] is DBNull ? null : Convert.ToInt32(reader["QTY"]),
+
                 ProductName = Convert.ToString(reader["PRODUCTNAME"])?.Trim() ?? string.Empty,
 
                 Factory = Convert.ToString(reader["FACTORY"])?.Trim() ?? string.Empty,
@@ -1960,6 +2145,10 @@ public class StackerSqlService
     SELECT
 
         [HOLDER],
+
+        [JOB],
+
+        [QTY],
 
         [PRODUCTNAME],
 
@@ -2020,6 +2209,10 @@ public class StackerSqlService
             {
 
                 Holder = Convert.ToString(reader["HOLDER"])?.Trim() ?? string.Empty,
+
+                Job = reader["JOB"] is DBNull ? null : Convert.ToString(reader["JOB"])?.Trim(),
+
+                Qty = reader["QTY"] is DBNull ? null : Convert.ToInt32(reader["QTY"]),
 
                 ProductName = Convert.ToString(reader["PRODUCTNAME"])?.Trim() ?? string.Empty,
 
@@ -3063,11 +3256,11 @@ public class StackerSqlService
 
             INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
 
-                ([HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [UPDATEBY], [UPDATETS])
+                ([HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION], [JOB], [UPDATEBY], [UPDATETS])
 
             VALUES
 
-                (@HOLDER, @BOXNAME, @SHIPBOXNAME, @QTY, @PARTNUM, @PENNUM, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @GRADE, @UPDATEBY, @UPDATETS);
+                (@HOLDER, @BOXNAME, @SHIPBOXNAME, @QTY, @PARTNUM, @PENNUM, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @GRADE, @CAMVERSION, @JOB, @UPDATEBY, @UPDATETS);
 
             """;
 
@@ -3110,6 +3303,13 @@ public class StackerSqlService
         command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = data.Process.Trim().ToUpperInvariant();
 
         command.Parameters.Add("@GRADE", SqlDbType.VarChar, 50).Value = data.BinName.Trim();
+
+        command.Parameters.Add("@CAMVERSION", SqlDbType.VarChar, 10).Value =
+
+            string.IsNullOrWhiteSpace(data.CamVersion) ? DBNull.Value : data.CamVersion.Trim();
+
+        command.Parameters.Add("@JOB", SqlDbType.VarChar, 50).Value =
+            string.IsNullOrWhiteSpace(data.Job) ? DBNull.Value : data.Job.Trim();
 
         command.Parameters.Add("@UPDATEBY", SqlDbType.VarChar, 50).Value = data.UpdateBy;
 
@@ -3344,6 +3544,8 @@ public class StackerSqlService
 
             (
 
+                [HOLDER] varchar(50) NULL,
+
                 [BOXNO] varchar(50) NULL,
 
                 [SHIPBOXNAME] varchar(50) NULL,
@@ -3366,6 +3568,8 @@ public class StackerSqlService
 
             OUTPUT
 
+                DELETED.[HOLDER],
+
                 DELETED.[BOXNAME],
 
                 DELETED.[SHIPBOXNAME],
@@ -3375,6 +3579,8 @@ public class StackerSqlService
             INTO @DeletedAssignments
 
             (
+
+                [HOLDER],
 
                 [BOXNO],
 
@@ -3400,18 +3606,13 @@ public class StackerSqlService
                     )
                 ) = 'FGI'
 
-                AND (
-                    NULLIF(LTRIM(RTRIM(HA.[LEC])), '') IS NULL
-                    OR @RequestLec IS NULL
-                    OR UPPER(LTRIM(RTRIM(HA.[LEC]))) = UPPER(LTRIM(RTRIM(@RequestLec)))
-                )
-
-                AND
-                (
-                    NULLIF(LTRIM(RTRIM(HA.[PENNUM])), '') IS NULL
-                    OR @RequestPenNum IS NULL
-                    OR UPPER(LTRIM(RTRIM(HA.[PENNUM]))) = UPPER(LTRIM(RTRIM(@RequestPenNum)))
-                )
+                /*
+                 * NOTE: LEC and PENNUM are deliberately NOT matched here.
+                 * They are optional identifiers on the withdrawal request
+                 * (a request may have no LEC/PENNUM while the assigned
+                 * Holder legitimately has one, or vice versa), so matching
+                 * on them can incorrectly reject a valid delete.
+                 */
 
                 AND
                 (
@@ -3451,9 +3652,26 @@ public class StackerSqlService
 
             BEGIN
 
+                DECLARE @UnmatchedHolders nvarchar(2000) =
+                (
+                    SELECT STRING_AGG(E.[HolderKey], ', ')
+                    FROM @ExpectedHolders E
+                    WHERE NOT EXISTS
+                    (
+                        SELECT 1
+                        FROM @DeletedAssignments D
+                        WHERE D.[HOLDER] IS NOT NULL
+                            AND UPPER(LTRIM(RTRIM(D.[HOLDER]))) = E.[HolderKey]
+                    )
+                );
+
+                DECLARE @ErrorMessage nvarchar(2048) = CONCAT(
+                    N'The Holder rows changed before deletion. No STACKER data was removed. Unmatched holders: ',
+                    ISNULL(@UnmatchedHolders, N'(unknown)'));
+
                 THROW 51013,
 
-                    'The Holder rows changed before deletion. No STACKER data was removed.',
+                    @ErrorMessage,
 
                     1;
 
@@ -4041,6 +4259,10 @@ public class StackerSqlService
 
             HA.[HOLDER],
 
+            HA.[JOB] AS Job,
+
+            HA.[QTY] AS Qty,
+
             HA.[GRADE] AS Grade,
 
             HA.[BOXNAME] AS BlackBox,
@@ -4057,7 +4279,9 @@ public class StackerSqlService
 
             HA.[PENNUM] AS PenNum,
 
-            HA.[LEC]
+            HA.[LEC],
+
+            HA.[STATUS] AS Status
 
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
 
@@ -4113,6 +4337,10 @@ public class StackerSqlService
 
                 Holder = Convert.ToString(reader["HOLDER"])?.Trim() ?? "",
 
+                Job = reader["Job"] is DBNull ? "" : Convert.ToString(reader["Job"])?.Trim() ?? "",
+
+                Qty = reader["Qty"] is DBNull ? 0 : Convert.ToInt32(reader["Qty"]),
+
                 Grade = Convert.ToString(reader["Grade"])?.Trim() ?? "",
 
                 BlackBox = Convert.ToString(reader["BlackBox"])?.Trim() ?? "",
@@ -4137,7 +4365,9 @@ public class StackerSqlService
 
                 PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
 
-                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? ""
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? "",
+
+                Status = Convert.ToString(reader["Status"])?.Trim() ?? ""
 
             });
 

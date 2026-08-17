@@ -23,8 +23,6 @@ import type {
 
 } from "../../types/withdrawal";
 
-import { useAuth } from "../../context/AuthContext";
-import { verifyFgiWithdrawalShipBoxApi } from "../../api/withdrawalApi";
 
 
 interface Props {
@@ -37,11 +35,17 @@ interface Props {
 
     onWithdraw: (
 
-        shippingId: string,
+        includedHolders: string[],
 
-        includedHolders: string[]
+        shippingId: string
 
     ) => Promise<void>;
+
+    onVerifyShippingId: (
+
+        shippingId: string
+
+    ) => Promise<{ success: boolean; message: string }>;
 
 }
 
@@ -472,9 +476,9 @@ export default function WithdrawalDisassociationModal({
 
     onWithdraw,
 
-}: Props) {
+    onVerifyShippingId,
 
-    const [shippingId, setShippingId] = useState("");
+}: Props) {
 
     const [holder, setHolder] = useState("");
 
@@ -546,6 +550,46 @@ export default function WithdrawalDisassociationModal({
 
 
 
+    const [
+
+        shippingId,
+
+        setShippingId,
+
+    ] = useState("");
+
+
+
+    const [
+
+        shippingIdVerified,
+
+        setShippingIdVerified,
+
+    ] = useState(false);
+
+
+
+    const [
+
+        shippingIdVerifying,
+
+        setShippingIdVerifying,
+
+    ] = useState(false);
+
+
+
+    const [
+
+        shippingIdError,
+
+        setShippingIdError,
+
+    ] = useState("");
+
+
+
     const confirmationCancelRef =
 
         useRef<HTMLButtonElement | null>(null);
@@ -564,11 +608,6 @@ export default function WithdrawalDisassociationModal({
 
 
 
-    const [shippingIdValidation, setShippingIdValidation] = useState<"idle" | "checking" | "success" | "error">("error");
-
-    const [shippingIdError, setShippingIdError] = useState("");
-
-    const { user } = useAuth();
 
 
 
@@ -622,9 +661,9 @@ export default function WithdrawalDisassociationModal({
 
     const isWithdrawDisabled =
 
-        shippingIdValidation !== "success" ||
-
         !allIncludedHoldersVerified ||
+
+        !shippingIdVerified ||
 
         isWithdrawing ||
 
@@ -697,98 +736,6 @@ export default function WithdrawalDisassociationModal({
         }
 
     }
-
-
-
-    const handleShippingIdVerify = async (
-
-        event: FormEvent<HTMLFormElement>
-
-    ) => {
-
-        event.preventDefault();
-
-
-
-        const trimmedShippingId = shippingId.trim();
-
-
-
-        if (!trimmedShippingId) {
-
-            setShippingIdError("Shipping ID is required.");
-
-            setShippingIdValidation("error");
-
-            return;
-
-        }
-
-
-
-        if (!user?.token) {
-
-            setShippingIdError("Login token is missing. Please sign in again.");
-
-            setShippingIdValidation("error");
-
-            return;
-
-        }
-
-
-
-        setShippingIdValidation("checking");
-
-        setShippingIdError("");
-
-
-
-        try {
-
-            const result = await verifyFgiWithdrawalShipBoxApi(
-
-                trimmedShippingId,
-
-                user.token
-
-            );
-
-
-
-            if (result.success) {
-
-                setShippingIdValidation("success");
-
-            } else {
-
-                setShippingIdError(
-
-                    result.message || "ShippingId could not be verified."
-
-                );
-
-                setShippingIdValidation("error");
-
-            }
-
-        } catch (error: unknown) {
-
-            setShippingIdError(
-
-                error instanceof Error
-
-                    ? error.message
-
-                    : "Unable to verify the ShippingId."
-
-            );
-
-            setShippingIdValidation("error");
-
-        }
-
-    };
 
 
 
@@ -944,6 +891,82 @@ export default function WithdrawalDisassociationModal({
 
 
 
+    const handleShippingIdChange = (
+
+        value: string
+
+    ) => {
+
+        setShippingId(value);
+
+        setShippingIdVerified(false);
+
+        setShippingIdError("");
+
+    };
+
+
+
+    const handleShippingIdVerify = async (
+
+        event: FormEvent<HTMLFormElement>
+
+    ): Promise<void> => {
+
+        event.preventDefault();
+
+
+
+        const normalizedShippingId = shippingId.trim();
+
+
+
+        if (!normalizedShippingId || shippingIdVerifying) {
+
+            return;
+
+        }
+
+
+
+        setShippingIdVerifying(true);
+
+        setShippingIdError("");
+
+
+
+        const result = await onVerifyShippingId(
+
+            normalizedShippingId
+
+        );
+
+
+
+        setShippingIdVerifying(false);
+
+
+
+        if (!result.success) {
+
+            setShippingIdVerified(false);
+
+            setShippingIdError(result.message);
+
+            return;
+
+        }
+
+
+
+        setShippingIdVerified(true);
+
+        setShippingIdError("");
+
+    };
+
+
+
     const handleHolderChange = (
 
         value: string
@@ -1032,7 +1055,7 @@ export default function WithdrawalDisassociationModal({
 
             try {
 
-                await onWithdraw(shippingId.trim(), holders);
+                await onWithdraw(holders, shippingId.trim());
 
                 onClose();
 
@@ -1461,11 +1484,12 @@ export default function WithdrawalDisassociationModal({
 
                             <div className="withdrawal-verify-grid">
 
+
                                 <div className="withdrawal-verify-item">
 
                                     <label htmlFor="withdrawal-shipping-id">
 
-                                        SHIPPING ID
+                                        SHIPPING BOX ID
 
                                     </label>
 
@@ -1487,39 +1511,27 @@ export default function WithdrawalDisassociationModal({
 
                                             type="text"
 
-                                            className={`form-control ${shippingIdValidation === "error"
-
-                                                    ? "is-invalid"
-
-                                                    : ""
-
-                                                }`}
+                                            className="form-control"
 
                                             value={shippingId}
 
+                                            disabled={isWithdrawing || shippingIdVerifying}
+
                                             onChange={(event) =>
 
-                                                setShippingId(event.target.value)
+                                                handleShippingIdChange(
+
+                                                    event.target.value
+
+                                                )
 
                                             }
 
                                             autoComplete="off"
 
-                                            aria-invalid={
+                                            aria-invalid={Boolean(shippingIdError)}
 
-                                                shippingIdValidation === "error"
-
-                                            }
-
-                                            aria-describedby={
-
-                                                shippingIdValidation === "idle"
-
-                                                    ? undefined
-
-                                                    : "withdrawal-shipping-id-feedback"
-
-                                            }
+                                            aria-describedby="withdrawal-shipping-id-feedback"
 
                                         />
 
@@ -1531,11 +1543,19 @@ export default function WithdrawalDisassociationModal({
 
                                             className="btn btn-primary withdrawal-verify-button"
 
-                                            disabled={shippingIdValidation === "checking"}
+                                            disabled={
+
+                                                isWithdrawing ||
+
+                                                shippingIdVerifying ||
+
+                                                !shippingId.trim()
+
+                                            }
 
                                         >
 
-                                            {shippingIdValidation === "checking" ? "CHECKING..." : "VERIFY"}
+                                            {shippingIdVerifying ? "VERIFYING..." : "VERIFY"}
 
                                         </button>
 
@@ -1543,55 +1563,52 @@ export default function WithdrawalDisassociationModal({
 
 
 
-                                    {shippingIdValidation === "success" && (
+                                    <div
 
-                                        <div
+                                        id="withdrawal-shipping-id-feedback"
 
-                                            id="withdrawal-shipping-id-feedback"
+                                        className={`withdrawal-holder-progress ${shippingIdError
+                                                ? "is-not-found"
+                                                : shippingIdVerified
+                                                    ? "is-complete"
+                                                    : "is-pending"
+                                            }`}
 
-                                            className="withdrawal-shipping-id-feedback is-success"
+                                        role={shippingIdError ? "alert" : "status"}
 
-                                            role="status"
+                                        aria-live="polite"
 
-                                            aria-live="polite"
+                                    >
 
-                                        >
+                                        <i
 
-                                            <i
+                                            className={
+                                                shippingIdError
+                                                    ? "fa-regular fa-circle-xmark"
+                                                    : shippingIdVerified
+                                                        ? "fa-regular fa-circle-check"
+                                                        : "fa-solid fa-triangle-exclamation"
+                                            }
 
-                                                className="fa-regular fa-circle-check"
+                                            aria-hidden="true"
 
-                                                aria-hidden="true"
-
-                                            />
-
-
-
-                                            <span>Shipping ID verified.</span>
-
-                                        </div>
-
-                                    )}
+                                        />
 
 
 
-                                    {shippingIdValidation === "error" && (
+                                        <span>
 
-                                        <div
+                                            {shippingIdError ||
 
-                                            id="withdrawal-shipping-id-feedback"
+                                                (shippingIdVerified
 
-                                            className="withdrawal-shipping-id-feedback is-error"
+                                                    ? "Shipping Box Id verified."
 
-                                            role="alert"
+                                                    : "Shipping Box Id not verified.")}
 
-                                        >
+                                        </span>
 
-                                            {shippingIdError || "Shipping ID is required."}
-
-                                        </div>
-
-                                    )}
+                                    </div>
 
                                 </div>
 
@@ -2073,7 +2090,7 @@ export default function WithdrawalDisassociationModal({
 
                                 className="btn withdrawal-disassociate-button"
 
-                                disabled={isWithdrawing}
+                                disabled={isWithdrawing || !shippingId.trim()}
 
                                 onClick={() =>
 

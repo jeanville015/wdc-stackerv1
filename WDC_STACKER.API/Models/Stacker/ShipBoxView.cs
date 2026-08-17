@@ -6,6 +6,7 @@
         public string BoxNo { get; set; } = string.Empty;
         public string ShipBoxName { get; set; } = string.Empty;
         public string Lec { get; set; } = string.Empty;
+        public string? CamVersion { get; set; }
         public string ShipBoxStatus { get; set; } = string.Empty;
         public int ShipBoxNum { get; set; }
         public int LayerRowNum { get; set; }
@@ -14,6 +15,9 @@
         public decimal ShipBoxListPercentage { get; set; }
         public bool HasReleaseStatus { get; set; }
         public bool HasHeldHolder { get; set; }
+
+        /// <summary>Zero-based indexes (holder-ID ascending order) whose STATUS is HOLD.</summary>
+        public List<int> HeldHolderPositions { get; set; } = new();
 
         // ── In-site hold (AHS-backed) display fields ────────────────────────────
         // Populated by StackerAggregate.PopulateFgiInSiteHoldStatusAsync when a

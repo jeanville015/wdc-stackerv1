@@ -1,7 +1,8 @@
-import { useState, type KeyboardEvent } from "react";
-import { scanApi, assignApi, exportCsvApi } from "../api/stackerApi";
-import { useAuth } from "../context/AuthContext";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { scanApi, assignApi } from "../api/stackerApi";
+import { useAuth } from "../context/useAuth";
 import type { BoxView, ShipBoxView } from "../types/stacker";
+import { formatBoxName, formatRackName, formatShipBoxName, transformValidationMessage } from "../utils/nameTransformers";
 import { STACKER_PROCESS } from "../config/processConfig";
 
 interface StackerOperationControlsProps {
@@ -19,6 +20,8 @@ interface FeedbackState {
     hint?: string;
     type: "success" | "error";
 }
+
+type OperationStage = "scan" | "assignment";
 
 interface OperationNoticeProps {
     id: string;
@@ -48,7 +51,7 @@ function OperationNotice({ id, feedback }: OperationNoticeProps) {
             <div>
                 <strong>{feedback.title}</strong>
 
-                {feedback.message && <span>{feedback.message}</span>}
+                {feedback.message && <span dangerouslySetInnerHTML={{ __html: feedback.message }} />}
 
                 {feedback.hint && (
                     <span className="operation-feedback-hint">
@@ -86,18 +89,64 @@ export default function StackerOperationControls({
     onSelectedTargetBoxChanged,
     onSelectedTargetShipBoxChanged,
     onAssignedBoxConfirmed,
-}: StackerOperationControlsProps) {
+}: StackerOperationControlsProps) { 
     const { user } = useAuth();
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
     const [assignLoading, setAssignLoading] = useState(false);
-    const [csvExportLoading, setCsvExportLoading] = useState(false);
-    const [validationFeedback, setValidationFeedback] =
-        useState<FeedbackState | null>(null);
-    const [assignmentFeedback, setAssignmentFeedback] =
-        useState<FeedbackState | null>(null);
+    const [validationFeedback, setValidationFeedback] = useState<FeedbackState | null>(null);
+    const [assignmentFeedback, setAssignmentFeedback] = useState<FeedbackState | null>(null);
+    const [scannedCamVersion, setScannedCamVersion] = useState<string | null | undefined>(null);
+
+    const [activeStage, setActiveStage] = useState<OperationStage>("scan");
+    const scanInputRef = useRef<HTMLInputElement>(null);
+    const refocusAfterAssignmentRef = useRef(false);
+    useEffect(() => {
+        if (assignLoading || !refocusAfterAssignmentRef.current) {
+            return;
+        }
+
+        refocusAfterAssignmentRef.current = false;
+        scanInputRef.current?.focus();
+    }, [assignLoading]);
 
     const canAssign = Boolean(selectedTargetBox && selectedTargetShipBox);
+
+    const getOperationStageClassName = ( stage: OperationStage, feedback: FeedbackState | null ) =>
+        [
+            "operation-section",
+            "operation-stage",
+            stage === "assignment"
+                ? "operation-assignment-section"
+                : "",
+            activeStage === stage ? "is-active" : "",
+            feedback?.type === "success" ? "is-complete" : "",
+            feedback?.type === "error" ? "has-error" : "",
+        ]
+            .filter(Boolean)
+            .join(" ");
+
+    const renderOperationStageMarker = ( stepNumber: 1 | 2, feedback: FeedbackState | null ) => {
+        if (feedback?.type === "success") {
+            return (
+                <i
+                    className="fa-solid fa-check"
+                    aria-hidden="true"
+                />
+            );
+        }
+
+        if (feedback?.type === "error") {
+            return (
+                <i
+                    className="fa-solid fa-exclamation"
+                    aria-hidden="true"
+                />
+            );
+        }
+
+        return <span>{stepNumber}</span>;
+    };
 
     const clearSuggestedTarget = () => {
         onSelectedTargetBoxChanged(null);
@@ -105,6 +154,7 @@ export default function StackerOperationControls({
     };
 
     const showValidationFailure = (message: string) => {
+        setActiveStage("scan");
         clearSuggestedTarget();
         setValidationFeedback({
             title: "Validation failed",
@@ -114,6 +164,7 @@ export default function StackerOperationControls({
     };
 
     const showAssignmentFailure = (message: string, hint?: string) => {
+        setActiveStage("assignment");
         setAssignmentFeedback({
             title: "Assignment failed",
             message,
@@ -128,6 +179,7 @@ export default function StackerOperationControls({
 
     const handleScan = async () => {
         const holder = scanValue.trim();
+        setActiveStage("scan");
 
         setValidationFeedback(null);
         setAssignmentFeedback(null);
@@ -149,6 +201,7 @@ export default function StackerOperationControls({
             const result = await scanApi(holder, user.token);
             const boxes = result.GridViewBoxes ?? [];
             onGridViewBoxesLoaded?.(boxes);
+            setScannedCamVersion(result.CamVersion);
 
             if (result.Success && result.CanAssign) {
                 const suggestedTarget = findSuggestedTarget(boxes);
@@ -165,19 +218,33 @@ export default function StackerOperationControls({
 
                 onSelectedTargetBoxChanged(suggestedTarget.box);
                 onSelectedTargetShipBoxChanged(suggestedTarget.shipBox);
+
+                const targetRackName = formatRackName(suggestedTarget.box.RackNum);
+                const targetBoxName = formatBoxName(
+                    suggestedTarget.box.BoxNo,
+                    suggestedTarget.box.RackNum
+                );
+                const targetShipBoxName = formatShipBoxName(
+                    suggestedTarget.shipBox.ShipBoxName
+                );
+
                 setValidationFeedback({
                     title: "Validation Pass!",
+                    message: `Holder will be assigned to<br/>RACK: ${targetRackName},<br/>BLACKBOX: ${targetBoxName},<br/>SHIPBOX: ${targetShipBoxName}`,
+                    hint: "Click ASSIGN to continue",
                     type: "success",
                 });
+                setActiveStage("assignment");
             } else {
                 // Holder may already be assigned - locate and highlight its
                 // existing box in the rack without enabling assignment.
                 const existingBox = boxes.find((box) => box.IsSuggestedTarget) ?? null;
                 onSelectedTargetBoxChanged(existingBox);
                 onSelectedTargetShipBoxChanged(null);
+                setActiveStage("scan");
                 setValidationFeedback({
                     title: "Validation failed",
-                    message: result.Message || `Holder ${holder} could not be validated.`,
+                    message: transformValidationMessage(result.Message || `Holder ${holder} could not be validated.`),
                     type: "error",
                 });
             }
@@ -218,7 +285,9 @@ export default function StackerOperationControls({
         }
 
         const assignedBoxNo = selectedTargetBox.BoxNo;
-        const assignedShipBoxName = selectedTargetShipBox.ShipBoxName;
+        const displayShipBoxName = formatShipBoxName(selectedTargetShipBox.ShipBoxName);
+        const displayBoxName = formatBoxName(selectedTargetBox.BoxNo, selectedTargetBox.RackNum);
+        const displayRackName = formatRackName(selectedTargetBox.RackNum);
 
         setAssignLoading(true);
 
@@ -235,14 +304,15 @@ export default function StackerOperationControls({
                     ShipBoxLayerRowNum: selectedTargetShipBox.LayerRowNum,
                     ShipBoxLayerColNum: selectedTargetShipBox.LayerColNum,
                     Process: STACKER_PROCESS,
+                    CamVersion: scannedCamVersion,
                 },
                 user.token
             );
 
             if (!result.Success) {
                 showAssignmentFailure(
-                    result.Message ||
-                        `Unable to assign holder. ${assignedShipBoxName} is no longer available.`,
+                    transformValidationMessage(result.Message ||
+                        `Unable to assign holder. ${displayShipBoxName} is no longer available.`),
                     "Validate again to refresh the target."
                 );
                 return;
@@ -255,9 +325,12 @@ export default function StackerOperationControls({
             setValidationFeedback(null);
             setAssignmentFeedback({
                 title: "Assignment complete",
-                message: `Holder was assigned to ${assignedShipBoxName}.`,
+                message: `Holder was assigned to:<br/> RACK: ${displayRackName},<br/>BLACKBOX: ${displayBoxName},<br/>SHIPBOX: ${displayShipBoxName}.`,
                 type: "success",
             });
+
+            setActiveStage("scan");
+            refocusAfterAssignmentRef.current = true;
 
             onAssignedBoxConfirmed?.(assignedBoxNo);
             clearSuggestedTarget();
@@ -272,24 +345,6 @@ export default function StackerOperationControls({
         }
     };
 
-    const handleExportCsv = async () => {
-        if (!user?.token) {
-            showAssignmentFailure("Login token is missing. Please sign in again.");
-            return;
-        }
-
-        setCsvExportLoading(true);
-        try {
-            await exportCsvApi(user.token);
-        } catch (err) {
-            showAssignmentFailure(
-                err instanceof Error ? err.message : "CSV export failed."
-            );
-        } finally {
-            setCsvExportLoading(false);
-        }
-    };
-
     const validationHasError = validationFeedback?.type === "error";
 
     return (
@@ -299,130 +354,121 @@ export default function StackerOperationControls({
         >
             <h2 className="operation-panel-title">Scanning / Assignment</h2>
 
-            <section className="operation-section">
-                <label htmlFor="scan-input" className="operation-field-label">
-                    Scan Holder
-                </label>
+            <section className={getOperationStageClassName("scan", validationFeedback)} >
 
-                <div
-                    className={[
-                        "operation-scan-field",
-                        validationHasError ? "is-error" : "",
-                    ]
-                        .filter(Boolean)
-                        .join(" ")}
-                >
-                    <input
-                        id="scan-input"
-                        type="text"
-                        className="form-control"
-                        placeholder="Scan Holder Number..."
-                        value={scanValue}
-                        autoComplete="off"
-                        aria-invalid={validationHasError}
-                        aria-describedby={
-                            validationFeedback ? "validation-feedback" : undefined
-                        }
-                        onChange={(e) => {
-                            setScanValue(e.target.value);
-                            clearSuggestedTarget();
-                            setValidationFeedback(null);
-                            setAssignmentFeedback(null);
-                        }}
-                        onKeyDown={handleKeyDown}
-                        disabled={scanLoading || assignLoading}
-                    />
-
-                    <span className="operation-barcode-icon" aria-hidden="true">
-                        <i className="fa-solid fa-barcode" />
-                    </span>
+                <div className="operation-stage-marker" aria-hidden="true">
+                    {renderOperationStageMarker(1, validationFeedback)}
                 </div>
 
-                <button
-                    type="button"
-                    className="btn operation-primary-button"
-                    onClick={handleScan}
-                    disabled={validateDisabled}
-                >
-                    {scanLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm"
-                                aria-hidden="true"
-                            />
-                            Validating...
-                        </>
-                    ) : (
-                        "Validate"
-                    )}
-                </button>
+                <div className="operation-stage-content">
 
-                {validationFeedback && (
-                    <OperationNotice
-                        id="validation-feedback"
-                        feedback={validationFeedback}
-                    />
-                )}
+                    <label htmlFor="scan-input" className="operation-field-label">
+                        Scan Holder
+                    </label>
+
+                    <div
+                        className={[
+                            "operation-scan-field",
+                            validationHasError ? "is-error" : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        <input
+                            ref={scanInputRef}
+                            id="scan-input"
+                            type="text"
+                            className="form-control"
+                            placeholder="Scan Holder No..."
+                            value={scanValue}
+                            autoFocus
+                            autoComplete="off"
+                            onFocus={() => setActiveStage("scan")}
+                            aria-invalid={validationHasError}
+                            aria-describedby={
+                                validationFeedback ? "validation-feedback" : undefined
+                            }
+                            onChange={(e) => {
+                                setActiveStage("scan");
+                                setScanValue(e.target.value);
+                                clearSuggestedTarget();
+                                setValidationFeedback(null);
+                                setAssignmentFeedback(null);
+                            }}
+                            onKeyDown={handleKeyDown}
+                            disabled={scanLoading || assignLoading}
+                        />
+
+                        <span className="operation-barcode-icon" aria-hidden="true">
+                            <i className="fa-solid fa-barcode" />
+                        </span>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="btn operation-primary-button"
+                        onClick={handleScan}
+                        disabled={validateDisabled}
+                    >
+                        {scanLoading ? (
+                            <>
+                                <span
+                                    className="spinner-border spinner-border-sm"
+                                    aria-hidden="true"
+                                />
+                                Validating...
+                            </>
+                        ) : (
+                            "Validate"
+                        )}
+                    </button>
+
+                    {validationFeedback && (
+                        <OperationNotice
+                            id="validation-feedback"
+                            feedback={validationFeedback}
+                        />
+                    )} 
+                </div>
             </section>
 
-            <section className="operation-section operation-assignment-section">
-                <h3 className="operation-section-title">Assignment</h3>
+            <section className={getOperationStageClassName("assignment", assignmentFeedback)} >
+                <div className="operation-stage-marker" aria-hidden="true">
+                    {renderOperationStageMarker(2, assignmentFeedback)}
+                </div>
 
-                <button
-                    type="button"
-                    className="btn operation-primary-button"
-                    onClick={handleAssign}
-                    disabled={assignDisabled}
-                >
-                    {assignLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm"
-                                aria-hidden="true"
-                            />
-                            Assigning...
-                        </>
+                <div className="operation-stage-content">
+                    <h3 className="operation-section-title">Assignment</h3>
+
+                    <button
+                        type="button"
+                        className="btn operation-primary-button"
+                        onClick={handleAssign}
+                        disabled={assignDisabled}
+                    >
+                        {assignLoading ? (
+                            <>
+                                <span
+                                    className="spinner-border spinner-border-sm"
+                                    aria-hidden="true"
+                                />
+                                Assigning...
+                            </>
+                        ) : (
+                            "Assign"
+                        )}
+                    </button> 
+                    {assignmentFeedback ? (
+                        <OperationNotice
+                            id="assignment-feedback"
+                            feedback={assignmentFeedback}
+                        />
                     ) : (
-                        "Assign"
+                        <p className="operation-helper-text">
+                            Assign the validated holder to the recommended destination.
+                        </p>
                     )}
-                </button>
-
-                {assignmentFeedback ? (
-                    <OperationNotice
-                        id="assignment-feedback"
-                        feedback={assignmentFeedback}
-                    />
-                ) : (
-                    <p className="operation-helper-text">
-                        Assign the validated holder to the recommended destination.
-                    </p>
-                )}
-            </section>
-
-            <section className="operation-section operation-assignment-section">
-                <h3 className="operation-section-title">Export</h3>
-
-                <button
-                    type="button"
-                    className="btn operation-secondary-button"
-                    onClick={handleExportCsv}
-                    disabled={csvExportLoading}
-                >
-                    {csvExportLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm"
-                                aria-hidden="true"
-                            />
-                            Exporting...
-                        </>
-                    ) : (
-                        <>
-                            <i className="fa-solid fa-file-csv" aria-hidden="true" />
-                            Download CSV
-                        </>
-                    )}
-                </button>
+                </div>
             </section>
         </aside>
     );

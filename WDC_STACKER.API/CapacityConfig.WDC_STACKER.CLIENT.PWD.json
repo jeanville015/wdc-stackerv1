@@ -1,6 +1,6 @@
 {
-  "RACK_COUNT": 650,
-  "LAYER_COUNT": 5,
+  "RACK_COUNT": 20,
+  "LAYER_COUNT": 2,
   "BOX_COUNT": 4,
   "MAX_ITEM_PER_BOX": 10,
   "LAYER_COUNT-SHIPBOX": 0,
@@ -9,6 +9,7 @@
   "TARGET_QTY": 0,
   "TARGET_TRAY_COUNT": 0,
   "ValidOperation": "735575 PWD OPERATION",
+  "HoldValidationOperations": [],
   "FJ": 3,
   "FD": 3,
   "FS": 3,

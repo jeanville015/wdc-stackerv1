@@ -12,11 +12,11 @@ import type { BoxView, ShipBoxView } from "../types/stacker";
 
 import { Tab, Tabs } from "react-bootstrap";
 
-import { getBoxesApi } from "../api/stackerApi";
+import { getBoxesApi, exportCsvApi } from "../api/stackerApi";
 
 import { runHoldCheck } from "../api/holdCheckApi";
 
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 
 
 
@@ -40,6 +40,8 @@ export default function HomePage() {
     const [refreshLoading, setRefreshLoading] = useState(false);
 
     const [holdCheckLoading, setHoldCheckLoading] = useState(false);
+
+    const [csvExportLoading, setCsvExportLoading] = useState(false);
 
 
 
@@ -157,6 +159,22 @@ export default function HomePage() {
 
     }, [handleRefresh]);
 
+    const handleExportCsv = async () => {
+        if (!token) {
+            alert("Login token is missing. Please sign in again.");
+            return;
+        }
+
+        setCsvExportLoading(true);
+        try {
+            await exportCsvApi(token);
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "CSV export failed.");
+        } finally {
+            setCsvExportLoading(false);
+        }
+    };
+
 
 
     // Auto-refresh boxes on login (when user becomes available)
@@ -165,29 +183,36 @@ export default function HomePage() {
 
         if (!token || loading || !config) {
             return;
-
         }
 
-        let cancelled = false;
+        let isCancelled = false;
 
-        getBoxesApi(token)
-            .then((result) => {
-                if (cancelled || !result.GridViewBoxes) {
-                    return;
+        Promise.resolve().then(async () => {
+            if (isCancelled) return;
+
+            setRefreshLoading(true);
+
+            try {
+                const result = await getBoxesApi(token);
+
+                if (!isCancelled && result.GridViewBoxes) {
+                    setGridViewBoxes(result.GridViewBoxes);
+                    setSelectedTargetBox(null);
+                    setSelectedTargetShipBox(null);
                 }
-
-                setGridViewBoxes(result.GridViewBoxes);
-                setSelectedTargetBox(null);
-                setSelectedTargetShipBox(null);
-            })
-            .catch((err) => {
-                if (!cancelled) {
+            } catch (err) {
+                if (!isCancelled) {
                     console.error("Failed to refresh boxes:", err);
                 }
-            });
+            } finally {
+                if (!isCancelled) {
+                    setRefreshLoading(false);
+                }
+            }
+        });
 
         return () => {
-            cancelled = true;
+            isCancelled = true;
         };
 
     }, [token, loading, config]);
@@ -224,7 +249,7 @@ export default function HomePage() {
 
                             display: "grid",
 
-                        gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)",
+                        gridTemplateColumns: "minmax(220px, 320px) minmax(0, 1fr)",
 
                         gap: "1rem",
 
@@ -293,6 +318,108 @@ export default function HomePage() {
                             </h2>
 
                             <div style={{ display: "flex", gap: "0.5rem" }}>
+
+                                <button
+
+                                className="btn btn-sm"
+
+                                onClick={handleRefresh}
+
+                                disabled={refreshLoading || loading}
+
+                                style={{
+
+                                    background: refreshLoading || loading
+
+                                        ? "#a0b4d6"
+
+                                        : "#28a745",
+
+                                    color: "#ffffff",
+
+                                    border: "none",
+
+                                    borderRadius: "6px",
+
+                                    padding: "0.4rem 0.8rem",
+
+                                    fontSize: "0.8rem",
+
+                                    fontWeight: "500",
+
+                                    display: "flex",
+
+                                    alignItems: "center",
+
+                                    gap: "0.5rem",
+
+                                    cursor: refreshLoading || loading ? "not-allowed" : "pointer",
+
+                                }}
+
+                            >
+
+                                {refreshLoading ? (
+
+                                    <>
+
+                                        <span
+
+                                            className="spinner-border spinner-border-sm"
+
+                                            role="status"
+
+                                            aria-hidden="true"
+
+                                        />
+
+                                        Refreshing...
+
+                                    </>
+
+                                ) : (
+
+                                    <>
+
+                                        <svg
+
+                                            xmlns="http://www.w3.org/2000/svg"
+
+                                            width="14"
+
+                                            height="14"
+
+                                            viewBox="0 0 24 24"
+
+                                            fill="none"
+
+                                            stroke="currentColor"
+
+                                            strokeWidth="2"
+
+                                            strokeLinecap="round"
+
+                                            strokeLinejoin="round"
+
+                                        >
+
+                                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+
+                                            <path d="M3 3v5h5" />
+
+                                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+
+                                            <path d="M16 21h5v-5" />
+
+                                        </svg>
+
+                                        Refresh
+
+                                    </>
+
+                                )}
+
+                            </button>
 
                                 <button
 
@@ -393,106 +520,41 @@ export default function HomePage() {
                                 </button>
 
                                 <button
-
-                                className="btn btn-sm"
-
-                                onClick={handleRefresh}
-
-                                disabled={refreshLoading || loading}
-
-                                style={{
-
-                                    background: refreshLoading || loading
-
-                                        ? "#a0b4d6"
-
-                                        : "#0052cc",
-
-                                    color: "#ffffff",
-
-                                    border: "none",
-
-                                    borderRadius: "6px",
-
-                                    padding: "0.4rem 0.8rem",
-
-                                    fontSize: "0.8rem",
-
-                                    fontWeight: "500",
-
-                                    display: "flex",
-
-                                    alignItems: "center",
-
-                                    gap: "0.5rem",
-
-                                    cursor: refreshLoading || loading ? "not-allowed" : "pointer",
-
-                                }}
-
-                            >
-
-                                {refreshLoading ? (
-
-                                    <>
-
-                                        <span
-
-                                            className="spinner-border spinner-border-sm"
-
-                                            role="status"
-
-                                            aria-hidden="true"
-
-                                        />
-
-                                        Refreshing...
-
-                                    </>
-
-                                ) : (
-
-                                    <>
-
-                                        <svg
-
-                                            xmlns="http://www.w3.org/2000/svg"
-
-                                            width="14"
-
-                                            height="14"
-
-                                            viewBox="0 0 24 24"
-
-                                            fill="none"
-
-                                            stroke="currentColor"
-
-                                            strokeWidth="2"
-
-                                            strokeLinecap="round"
-
-                                            strokeLinejoin="round"
-
-                                        >
-
-                                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-
-                                            <path d="M3 3v5h5" />
-
-                                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-
-                                            <path d="M16 21h5v-5" />
-
-                                        </svg>
-
-                                        Refresh
-
-                                    </>
-
-                                )}
-
-                            </button>
+                                    className="btn btn-sm"
+                                    onClick={handleExportCsv}
+                                    disabled={csvExportLoading || loading}
+                                    style={{
+                                        background: csvExportLoading || loading
+                                            ? "#a0b4d6"
+                                            : "#0052cc",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        borderRadius: "6px",
+                                        padding: "0.4rem 0.8rem",
+                                        fontSize: "0.8rem",
+                                        fontWeight: "500",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "0.5rem",
+                                        cursor: csvExportLoading || loading ? "not-allowed" : "pointer",
+                                    }}
+                                >
+                                    {csvExportLoading ? (
+                                        <>
+                                            <span
+                                                className="spinner-border spinner-border-sm"
+                                                role="status"
+                                                aria-hidden="true"
+                                            />
+                                            Exporting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <i className="fa-solid fa-file-csv" aria-hidden="true" />
+                                            Download CSV
+                                        </>
+                                    )}
+                                </button>
 
                             </div>
 

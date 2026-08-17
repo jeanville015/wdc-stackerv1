@@ -97,26 +97,6 @@ export async function getFgiWithdrawalLayoutApi(
     return response.json() as Promise<FgiWithdrawalRack | null>;
 }
 
-export async function verifyFgiWithdrawalShipBoxApi(
-    shippingId: string,
-    token: string
-): Promise<{ success: boolean; message: string }> {
-    const query = new URLSearchParams({ shippingId });
-
-    const response = await fetch(
-        `${API_BASE}/api/stacker/withdrawal/verify-shipbox?${query.toString()}`,
-        { headers: createHeaders(token) }
-    );
-
-    if (!response.ok) {
-        throw new Error(
-            await readError(response, "Unable to verify the ShippingId.")
-        );
-    }
-
-    return response.json() as Promise<{ success: boolean; message: string }>;
-}
-
 export async function getFgiWithdrawalDisassociationPreviewApi(
     lec: string,
     penNum: string,
@@ -162,17 +142,42 @@ export async function getFgiWithdrawalDisassociationPreviewApi(
         Promise<FgiWithdrawalDisassociationPreview>;
 }
 
+export async function verifyFgiWithdrawalShipBoxApi(
+    shippingId: string,
+    token: string
+): Promise<{ message: string; camVersion: string | null }> {
+    const response = await fetch(
+        `${API_BASE}/api/stacker/withdrawal/verify-shipbox?shippingId=${encodeURIComponent(shippingId)}`,
+        {
+            method: "GET",
+            headers: createHeaders(token),
+        }
+    );
+
+    if (!response.ok) {
+        throw new Error(
+            await readError(
+                response,
+                "Unable to verify the ShippingId."
+            )
+        );
+    }
+
+    return response.json() as
+        Promise<{ message: string; camVersion: string | null }>;
+}
+
 export async function
     disassociateFgiWithdrawalRequestApi(
         requestId: number,
-        shippingId: string,
         includedHolders: string[],
+        shippingId: string,
         token: string
     ): Promise<FgiWithdrawalDisassociationResponse> {
     const request:
         FgiWithdrawalDisassociationRequest = {
-        ShippingId: shippingId,
         IncludedHolders: includedHolders,
+        ShippingId: shippingId,
     };
 
     const response = await fetch(

@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import { loginApi } from "../api/AuthApi";
 
 // ── Decorative grid of embossed/active buttons ────────────────────────────────
@@ -110,7 +110,7 @@ export default function LoginPage() {
                 login({ username: result.Username, token: result.Token, canAccessConfiguration: result.CanAccessConfiguration, });
                 navigate("/", { replace: true });
             } else {
-                setError(result.Message || "Login failed.");
+                setError(result.Message || "Invalid username or password.");
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "Unexpected error.");

@@ -61,6 +61,8 @@ export interface FeatsQueryResponse {
 
 export interface BoxAssignment {
     Holder: string;
+    Job: string | null;
+    Qty: number | null;
     ProductName: string;
     Factory: string;
     Lec: string;

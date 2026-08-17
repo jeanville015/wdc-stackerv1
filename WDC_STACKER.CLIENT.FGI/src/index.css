@@ -857,14 +857,21 @@ code {
 
 .withdrawal-verify-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.85rem;
 }
 
 .withdrawal-verify-item {
-    padding: 0.7rem;
     border: 1px solid #7fa1e8;
     border-radius: 5px;
+}
+
+.withdrawal-verify-item > label {
+    margin: 0.7rem 0.7rem 0.7rem 0.7rem;
+}
+
+.withdrawal-verify-control {
+    margin: 0 0.7rem 0.7rem 0.7rem;
 }
 
 .withdrawal-verify-control {
@@ -905,7 +912,7 @@ code {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    margin-top: 0.65rem;
+    margin: 0.65rem 0 0 0;
     padding: 0.55rem 0.65rem;
     border: 1px solid transparent;
     border-radius: 5px;
@@ -1288,7 +1295,7 @@ code {
     top: 0;
     z-index: 5;
     width: 100%;
-    max-width: 300px;
+    max-width: 320px;
     min-width: 0;
     padding: 1.25rem;
     border: 1px solid #dde1e9;
@@ -1308,6 +1315,7 @@ code {
 }
 
 .operation-panel-title {
+    padding-bottom: 0.5rem;
     font-size: 0.9rem;
 }
 
@@ -1316,15 +1324,132 @@ code {
 }
 
 .operation-section {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    column-gap: 0.75rem;
+    margin-inline: -1.25rem;
+    padding: 1rem 1.25rem 0.9rem;
+    border: 0;
+    border-radius: 0;
+    background: #ffffff;
+    box-shadow: none;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.operation-stage-content {
     display: flex;
+    min-width: 0;
     flex-direction: column;
     gap: 0.75rem;
-    padding-top: 1.25rem;
+}
+
+.operation-stage-marker {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    width: 1.75rem;
+    height: 1.75rem;
+    place-items: center;
+    align-self: start;
+    border: 2px solid #aeb7c4;
+    border-radius: 50%;
+    background: #ffffff;
+    color: #687386;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+    .operation-stage-marker i {
+        font-size: 0.72rem;
+    }
+
+/* Vertical connector beneath each marker. */
+.operation-stage::before {
+    position: absolute;
+    z-index: 1;
+    top: 2.9rem;
+    bottom: -1rem;
+    left: calc(1.25rem + 0.8125rem);
+    width: 2px;
+    border-radius: 999px;
+    background: #dfe4eb;
+    content: "";
+}
+
+/* The second rail ends inside the panel. */
+.operation-assignment-section::before {
+    bottom: 0.9rem;
+}
+
+/* Current step. */
+.operation-stage.is-active {
+    background: #f3f8ff;
+}
+
+    .operation-stage.is-active .operation-stage-marker {
+        border-color: #0052cc;
+        background: #0052cc;
+        color: #ffffff;
+    }
+
+    .operation-stage.is-active::before {
+        background: #0052cc;
+    }
+
+    .operation-stage.is-active .operation-field-label,
+    .operation-stage.is-active .operation-section-title {
+        color: #0b1f55;
+    }
+
+    .operation-stage.is-active .operation-helper-text {
+        color: #172b4d;
+    }
+
+/* Successful step. */
+.operation-stage.is-complete .operation-stage-marker {
+    border-color: #1f9d45;
+    background: #1f9d45;
+    color: #ffffff;
+}
+
+.operation-stage.is-complete::before {
+    background: #1f9d45;
+}
+
+.operation-stage.is-complete .operation-field-label,
+.operation-stage.is-complete .operation-section-title {
+    color: #0b1f55;
+}
+
+/* Failed step. Keep it active, but show an error marker. */
+.operation-stage.has-error {
+    background: #fff7f7;
+}
+
+    .operation-stage.has-error .operation-stage-marker {
+        border-color: #d23232;
+        background: #d23232;
+        color: #ffffff;
+    }
+
+    .operation-stage.has-error::before {
+        background: #d23232;
+    }
+
+    .operation-stage.has-error .operation-field-label,
+    .operation-stage.has-error .operation-section-title {
+        color: #b92525;
+    }
+
+.operation-stage .operation-feedback {
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .operation-assignment-section {
-    margin-top: 1.25rem;
-    border-top: 1px solid #dde1e9;
+    margin-top: 0;
 }
 
 .operation-field-label {
@@ -1518,6 +1643,11 @@ code {
     pointer-events: none;
 }
 
+.rack-box-content--expanded-mini-grid {
+    inset: 0.75rem;
+    gap: 0.5rem;
+}
+
 .rack-box-name {
     display: inline-flex;
     align-items: center;
@@ -1546,6 +1676,16 @@ code {
     pointer-events: none;
 }
 
+.shipbox-grid-cell > .rack-box-in-site-hold-badge {
+    display: inline-flex;
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    z-index: 20;
+    align-items: center;
+    justify-content: center;
+}
+
 .withdrawal-holder-row.is-in-site-hold > td {
     background: #fff0f0;
 }
@@ -1569,4 +1709,513 @@ code {
     white-space: nowrap;
     transform: translateX(-50%);
     pointer-events: none;
+}
+
+
+/* Black-box ShipBox grid modal */
+.shipbox-grid-dialog {
+    width: calc(100% - 2rem);
+    max-width: 1120px;
+}
+
+.shipbox-grid-modal {
+    overflow: hidden;
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 20px 55px rgba(9, 30, 66, 0.28);
+}
+
+.shipbox-grid-modal-header {
+    align-items: flex-start;
+    padding: 1.5rem 1.75rem 1.25rem;
+}
+
+.shipbox-grid-modal-header .btn-close {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+.shipbox-modal-heading {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+}
+
+.shipbox-modal-eyebrow {
+    margin-bottom: 0.15rem;
+    color: #5e6c84;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.shipbox-grid-modal .modal-title {
+    color: #172b4d;
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.shipbox-modal-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0;
+    margin-top: 0.9rem;
+    color: #42526e;
+    font-size: 0.82rem;
+}
+
+    .shipbox-modal-metadata > span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        white-space: nowrap;
+    }
+
+        .shipbox-modal-metadata > span + span::before {
+            width: 1px;
+            height: 1.25rem;
+            margin: 0 1rem;
+            background: #c1c7d0;
+            content: "";
+        }
+
+    .shipbox-modal-metadata strong {
+        color: #172b4d;
+        font-weight: 800;
+    }
+
+.shipbox-grid-modal .modal-body {
+    padding: 1.35rem 1.75rem 1.25rem;
+}
+
+.shipbox-grid-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.shipbox-grid-scroll {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.shipbox-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(230px, 1fr));
+    gap: 1rem;
+    min-width: 760px;
+}
+
+.shipbox-grid-cell {
+    position: relative;
+    width: 100%;
+    min-height: 124px;
+    padding: 0.9rem;
+    overflow: hidden;
+    appearance: none;
+    border: 1px solid #cfd5dd;
+    border-radius: 8px;
+    background: #f4f5f7;
+    color: #172b4d;
+    font: inherit;
+    text-align: left;
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.shipbox-grid-cell--mapped {
+    border-color: #0d6efd;
+    background: #ffffff;
+    cursor: pointer;
+}
+
+    .shipbox-grid-cell--mapped:hover {
+        border-color: #0052cc;
+        background: #f7faff;
+        box-shadow: 0 3px 10px rgba(0, 82, 204, 0.12);
+    }
+
+    .shipbox-grid-cell--mapped:focus-visible {
+        outline: 0;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+
+.shipbox-grid-cell--release {
+    border-color: #16833a;
+}
+
+.shipbox-grid-cell--held {
+    border-color: #d23232;
+    background: #fff7f7;
+}
+
+    .shipbox-grid-cell--held:hover {
+        border-color: #b92525;
+        background: #fff0f0;
+    }
+
+.shipbox-grid-cell--highlighted {
+    overflow: visible;
+}
+
+.shipbox-grid-cell--empty,
+.shipbox-grid-cell--empty:disabled {
+    background: #f1f2f4;
+    color: #42526e;
+    cursor: default;
+    opacity: 1;
+}
+
+.shipbox-grid-cell--empty,
+.shipbox-grid-cell--empty:disabled {
+    border: 1.5px dashed #b7c0cd;
+    background: #ffffff;
+    color: #6b778c;
+    cursor: default;
+    opacity: 1;
+}
+
+.shipbox-empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.55rem;
+    color: #6b778c;
+    font-size: 0.9rem;
+    font-weight: 600;
+    pointer-events: none;
+}
+
+.shipbox-empty-icon {
+    color: #7a869a;
+    font-size: 2rem;
+}
+
+.shipbox-empty-label {
+    /* Remove this entire rule. */
+}
+
+.shipbox-cell-content {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+    pointer-events: none;
+}
+
+/*
+ * The floating IN-SITE badge occupies the outermost
+ * upper-right corner. Move the identity row below it
+ * only on cards containing that badge.
+ */ 
+
+.shipbox-cell-identity {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.5rem;
+}
+.shipbox-cell-name-pill {
+    display: inline-flex;
+    min-height: 1.65rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid #0052cc;
+    border-radius: 5px;
+    background: #deebff;
+    color: #0747a6;
+    font-size: 0.85rem;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.shipbox-cell-count {
+    color: #42526e;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.shipbox-cell-identity small {
+    color: #42526e;
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.shipbox-capacity-track {
+    display: grid;
+    align-self: center;
+    align-items: stretch;
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    gap: 2px;
+}
+
+.shipbox-capacity-segment {
+    min-width: 2px;
+    border-radius: 2px;
+    background: #dbe9ff;
+}
+
+    .shipbox-capacity-segment.is-filled {
+        background: #0052cc;
+    }
+
+    .shipbox-capacity-segment.is-held {
+        background: #d23232;
+    }
+
+    .shipbox-capacity-segment.is-release.is-available {
+        background: #d8f3df;
+    }
+
+    .shipbox-capacity-segment.is-release.is-filled {
+        background: #16833a;
+    }
+
+.shipbox-cell-action {
+    display: inline-flex;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    margin-top: auto;
+    color: #0052cc;
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.shipbox-grid-cell--held .shipbox-cell-action {
+    color: #d23232;
+}
+
+.shipbox-cell-chevron {
+    color: currentColor;
+    font-size: 0.75rem;
+}
+
+.shipbox-status-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    color: #42526e;
+    font-size: 0.8rem;
+}
+
+    .shipbox-status-legend > span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+    }
+
+.shipbox-legend-swatch {
+    display: inline-block;
+    width: 0.85rem;
+    height: 0.85rem;
+    border: 1px solid transparent;
+    border-radius: 2px;
+}
+
+    .shipbox-legend-swatch.is-available {
+        border-color: #b3d1ff;
+        background: #dbe9ff;
+    }
+
+    .shipbox-legend-swatch.is-occupied {
+        background: #0052cc;
+    }
+
+    .shipbox-legend-swatch.is-held {
+        background: #d23232;
+    }
+
+.shipbox-grid-modal .modal-footer {
+    padding: 1rem 1.75rem;
+}
+
+/* Ship-box holder assignments modal */
+.box-assignments-dialog {
+    width: calc(100% - 2rem);
+    max-width: 1280px;
+}
+
+.box-assignments-modal {
+    overflow: hidden;
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 20px 55px rgba(9, 30, 66, 0.3);
+}
+
+.box-assignments-modal-header {
+    align-items: flex-start;
+    padding: 1.5rem 1.75rem 1.25rem;
+}
+
+    .box-assignments-modal-header .btn-close {
+        flex: 0 0 auto;
+        margin-left: auto;
+    }
+
+.box-assignments-modal .modal-title {
+    margin: 0;
+    color: #172b4d;
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.box-assignments-modal .modal-body {
+    padding: 1.5rem 1.75rem 2rem;
+}
+
+.box-assignments-table-wrap {
+    overflow-x: auto;
+    border-radius: 6px;
+}
+
+.box-assignments-table {
+    min-width: 850px;
+    margin-bottom: 0;
+    border-color: #cfd5dd;
+    color: #172b4d;
+}
+
+    .box-assignments-table > thead > tr > th {
+        padding: 1rem 0.85rem;
+        border-color: #cfd5dd;
+        background: #f4f5f7;
+        color: #172b4d;
+        font-size: 0.9rem;
+        font-weight: 800;
+        vertical-align: middle;
+    }
+
+    .box-assignments-table > tbody > tr > td {
+        padding: 1.15rem 0.85rem;
+        border-color: #d8dde6;
+        background: #ffffff;
+        color: #172b4d;
+        font-size: 0.9rem;
+        vertical-align: middle;
+    }
+
+.box-assignment-holder {
+    font-weight: 800;
+}
+
+.box-assignment-empty-value {
+    color: #7a869a;
+}
+
+.box-assignments-table > tbody >
+tr.box-assignment-row--held > td {
+    background: #fff3f3;
+}
+
+    .box-assignments-table > tbody >
+    tr.box-assignment-row--held > td:first-child {
+        box-shadow: inset 4px 0 0 #d23232;
+    }
+
+.box-assignment-hold-badge {
+    display: inline-flex;
+    min-height: 1.8rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0.6rem;
+    border: 1px solid #d23232;
+    border-radius: 5px;
+    background: #ffffff;
+    color: #c62828;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.box-assignment-disassociate {
+    display: inline-flex;
+    min-height: 2rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+    border-color: #d23232;
+    border-radius: 6px;
+    color: #c62828;
+    font-weight: 700;
+}
+
+    .box-assignment-disassociate:hover,
+    .box-assignment-disassociate:focus-visible {
+        border-color: #b92525;
+        background: #d23232;
+        color: #ffffff;
+    }
+
+.box-assignments-modal-footer {
+    justify-content: flex-end;
+    padding: 1rem 1.75rem;
+}
+
+    .box-assignments-modal-footer .btn-secondary {
+        min-width: 5rem;
+    }
+
+@media (max-width: 767.98px) {
+    .shipbox-grid-dialog {
+        width: calc(100% - 1rem);
+        margin: 0.5rem auto;
+    }
+
+    .shipbox-grid-modal-header,
+    .shipbox-grid-modal .modal-body,
+    .shipbox-grid-modal .modal-footer {
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
+
+    .shipbox-modal-metadata {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+        .shipbox-modal-metadata > span + span::before {
+            display: none;
+        }
+}
+
+@media (max-width: 767.98px) {
+    .box-assignments-dialog {
+        width: calc(100% - 1rem);
+        margin: 0.5rem auto;
+    }
+
+    .box-assignments-modal-header,
+    .box-assignments-modal .modal-body,
+    .box-assignments-modal-footer {
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
 }

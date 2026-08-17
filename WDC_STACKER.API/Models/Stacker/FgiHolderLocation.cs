@@ -5,5 +5,6 @@ namespace WDC_STACKER.API.Models.Stacker
         public string Holder { get; set; } = string.Empty;
         public string BoxNo { get; set; } = string.Empty;
         public string ShipBoxName { get; set; } = string.Empty;
+        public string? CamVersion { get; set; }
     }
 }

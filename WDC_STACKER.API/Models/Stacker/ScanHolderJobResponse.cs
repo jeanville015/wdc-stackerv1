@@ -8,6 +8,7 @@ namespace WDC_STACKER.API.Models.Stacker
         public bool CanAssign { get; set; }
         public string Message { get; set; } = string.Empty;
         public string Holder { get; set; } = string.Empty;
+        public string? CamVersion { get; set; }
         public Dictionary<string, string> HolderJob { get; set; } = new();
         public List<BoxView> GridViewBoxes { get; set; } = new();
         public FeatsQueryResponse? RawQueryResult { get; set; }

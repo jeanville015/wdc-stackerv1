@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import wdLogo from "../assets/wd-logo.png";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 import LeftNav from "./LeftNav";
 
 export default function AppShell() {
@@ -32,7 +32,7 @@ export default function AppShell() {
                             src={wdLogo}
                             alt="Western Digital"
                         />
-                        <span>STACKER</span>
+                        <span>FGI STACKER</span>
                     </div>
 
                     <div className="stacker-header-account">

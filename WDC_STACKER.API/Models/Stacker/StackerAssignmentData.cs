@@ -36,6 +36,9 @@
         public string ShipBoxName { get; set; } = string.Empty;
         public string Process { get; set; } = string.Empty;
         public string BinName { get; set; } = string.Empty;
+        public string? CamVersion { get; set; }
+        public string? Job { get; set; }
+        public string? Status { get; set; }
         public string UpdateBy { get; set; } = string.Empty;
         public DateTime UpdateTs { get; set; }
     }

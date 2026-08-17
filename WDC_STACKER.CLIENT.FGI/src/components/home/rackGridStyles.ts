@@ -150,15 +150,20 @@ export const rackGridStyle = (boxCount: number, layerCount: number): CSSProperti
 
 export const rackOverviewGridStyle = (
     boxCount: number,
-    layerCount: number
+    layerCount: number,
+    minimumBoxWidth = 88,
+    minimumBoxHeight = 128
 ): CSSProperties => ({
     display: "grid",
-    gridTemplateColumns: `52px repeat(${boxCount}, minmax(88px, 1fr))`,
-    gridTemplateRows: `32px repeat(${layerCount}, minmax(128px, auto))`,
+    gridTemplateColumns:
+        `52px repeat(${boxCount}, minmax(${minimumBoxWidth}px, 1fr))`,
+    gridTemplateRows:
+        `32px repeat(${layerCount}, minmax(${minimumBoxHeight}px, auto))`,
     columnGap: "8px",
     rowGap: "28px",
     width: "100%",
-    minWidth: `${52 + boxCount * 96}px`,
+    minWidth:
+        `${52 + boxCount * (minimumBoxWidth + 8)}px`,
     alignItems: "stretch",
 });
 

@@ -12,5 +12,6 @@
         public int ShipBoxLayerRowNum { get; set; }
         public int ShipBoxLayerColNum { get; set; }
         public string Process { get; set; } = string.Empty;
+        public string? CamVersion { get; set; }
     }
 }

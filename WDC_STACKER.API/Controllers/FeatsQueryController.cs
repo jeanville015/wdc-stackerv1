@@ -16,7 +16,7 @@ namespace WDC_STACKER.API.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Query([FromBody] FeatsQueryRequest request)
+        public async Task<IActionResult> Query([FromBody] FeatsQueryRequest request, [FromQuery] string? camVersion = null)
         {
             if (string.IsNullOrWhiteSpace(request.QueryType))
                 return BadRequest(new { message = "QueryType is required." });
@@ -30,7 +30,11 @@ namespace WDC_STACKER.API.Controllers
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
                 return Unauthorized(new { message = "FEATS credentials are required." });
 
-            var result = await _featsService.QueryAsync(request, username, password);
+            var resolvedCamVersion = WDC_STACKER.API.Models.CamVersion.IsValid(camVersion)
+                ? camVersion!.Trim()
+                : WDC_STACKER.API.Models.CamVersion.Cam3_4;
+
+            var result = await _featsService.QueryAsync(request, username, password, resolvedCamVersion);
 
             if (!result.Success)
                 return StatusCode(502, new { result.Message });

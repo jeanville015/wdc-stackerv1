@@ -50,6 +50,8 @@ namespace WDC_STACKER.API.Aggregate
 
         public async Task<bool> CanAccessConfigurationAsync(string username, string password)
         {
+            // Privilege lookups are not holder/cam-specific; cam3.4 is used
+            // as the default endpoint for this administrative check.
             var result = await ExecuteFeatsQueryAsync(
                 queryType: "UsersByPrivilege",
                 fieldNames: new[] { "EmployeeName", "FullName" },
@@ -57,7 +59,8 @@ namespace WDC_STACKER.API.Aggregate
                 filterValue: "TAP_FAB3ADMIN",
                 recordLimit: 250,
                 username: username,
-                password: password);
+                password: password,
+                camVersion: WDC_STACKER.API.Models.CamVersion.Cam3_4);
 
             if (!result.Success)
                 return false;
@@ -273,8 +276,7 @@ namespace WDC_STACKER.API.Aggregate
 
             return boxes
                 .Where(x => x.BoxListPercentage < 100)
-                .OrderBy(x => x.BoxListPercentage)
-                .ThenBy(x => x.RackNum)
+                .OrderBy(x => x.RackNum)
                 .ThenBy(x => x.LayerRowNum)
                 .ThenBy(x => x.LayerColNum)
                 .FirstOrDefault();
@@ -335,7 +337,10 @@ namespace WDC_STACKER.API.Aggregate
                        holderData.PenNum) &&
                    SameRequiredIdentity(
                        box.ProductName,
-                       holderData.ProductName);
+                       holderData.ProductName) &&
+                   SameRequiredIdentity(
+                       box.CamVersion,
+                       holderData.CamVersion);
         }
 
         private static BoxView? TrySelectSuggestedFgiTarget(
@@ -464,7 +469,8 @@ namespace WDC_STACKER.API.Aggregate
                 ShipBoxListPercentage = 0,
                 IsSuggestedTarget = true,
                 HasReleaseStatus = true,
-                Lec = normalizedLec ?? string.Empty
+                Lec = normalizedLec ?? string.Empty,
+                CamVersion = box.CamVersion
             });
 
             return true;
@@ -525,6 +531,7 @@ namespace WDC_STACKER.API.Aggregate
                 PartNum = NormalizeOptional(holderData.PartNum),
                 PenNum = NormalizeOptional(holderData.PenNum),
                 ProductName = NormalizeOptional(holderData.ProductName),
+                CamVersion = NormalizeOptional(holderData.CamVersion),
                 RackNum = newRackNum,
                 LayerRowNum = newLayerRowNum,
                 LayerColNum = newLayerColNum,
@@ -613,6 +620,7 @@ namespace WDC_STACKER.API.Aggregate
                 "Routing",
                 "Workflow",
                 "WaferNum",
+                "SliderCount",
                 "HoldReason",
                 "HoldComment",
                 "InProcess"
@@ -630,7 +638,7 @@ namespace WDC_STACKER.API.Aggregate
                 });
             }
 
-            var holderJobResult = await ExecuteFeatsQueryAsync(
+            var (holderJobResult, resolvedCamVersion) = await ExecuteFeatsQueryAcrossCamVersionsAsync(
                 queryType: "HolderJob",
                 fieldNames: fieldNames.ToArray(),
                 filterName: "Holder",
@@ -653,7 +661,7 @@ namespace WDC_STACKER.API.Aggregate
 
             var row = holderJobResult.ParsedResult.Rows.FirstOrDefault();
 
-            if (row is null)
+            if (row is null || resolvedCamVersion is null)
             {
                 return new ScanHolderJobResponse
                 {
@@ -665,6 +673,7 @@ namespace WDC_STACKER.API.Aggregate
                 };
             }
 
+            var camVersion = resolvedCamVersion;
             var config = await _capacityConfigService.GetAsync(clientKey);
 
             var operation = GetField(row, "Operation");
@@ -677,6 +686,8 @@ namespace WDC_STACKER.API.Aggregate
             var productName = GetField(row, "ProductName");
             var buildCode = GetField(row, "BuildCode");
             var binName = GetField(row, "BinName");
+            var job = GetField(row, "Job");
+            var sliderCount = GetField(row, "SliderCount");
             var holdReason = GetField(row, "HoldReason");
             var holdComment = GetField(row, "HoldComment");
             var inProcess = GetField(row, "InProcess");
@@ -695,7 +706,8 @@ namespace WDC_STACKER.API.Aggregate
                 holdReason ?? "NULL",
                 holdComment ?? "NULL",
                 inProcess ?? "NULL");
-
+        
+        #region Validation Process
             // 1. Operation must match config.ValidOperation
             _logger.LogInformation(
                 "[SCAN VALIDATION] Checking Operation - Expected={ExpectedOperation}, Actual={ActualOperation}",
@@ -728,7 +740,7 @@ namespace WDC_STACKER.API.Aggregate
                    Success = false,
                    CanAssign = false,
                    Holder = holder,
-                   Message = "ParentHolder has value!",
+                   Message = "Holder has a Parent!",
                    HolderJob = row,
                    RawQueryResult = holderJobResult
                };
@@ -763,14 +775,46 @@ namespace WDC_STACKER.API.Aggregate
                     "[SCAN VALIDATION] FAILED - Missing PartNumber or ProductName. PartNumber={PartNumber}, ProductName={ProductName}",
                     partNumber ?? "NULL",
                     productName ?? "NULL");
+                
+                // Determine which field(s) are missing for dynamic messaging
+                var missingPartNumber = string.IsNullOrWhiteSpace(partNumber);
+                var missingProductName = string.IsNullOrWhiteSpace(productName);
+                var validationHoldComment = missingPartNumber && missingProductName
+                    ? "NO PART NUMBER AND NO PRODUCT NAME"
+                    : missingPartNumber
+                        ? "NO PART NUMBER"
+                        : "NO PRODUCT NAME";
+
+                // Release any existing hold first, so MoveOut is not blocked by a holder already on hold.
+                var releaseResult = await ReleaseHolderWithRetryAsync(
+                    holder: holder,
+                    holderType: null,
+                    comment: string.Empty,
+                    username: credentials.Username,
+                    password: credentials.Password,
+                    camVersion: camVersion);
+
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] Release - Success={Success}, Message={Message}",
+                    releaseResult.Success,
+                    releaseResult.Message);
+
+                if (!releaseResult.Success)
+                {
+                    _logger.LogWarning(
+                        "[SCAN VALIDATION] Release failed, proceeding to MoveOut anyway: {Message}",
+                        releaseResult.Message);
+                }
+
                 // MoveOut to RBF2
                 var moveOutResult = await _featsService.MoveOutAsync(
                     holder: holder,
                     holderType: null,
-                    resource: "735617 RBF 2",
-                    nextOp: null,
+                    resource: null,
+                    nextOp: "735617 RBF 2",
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
 
                 _logger.LogInformation(
                     "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
@@ -792,14 +836,15 @@ namespace WDC_STACKER.API.Aggregate
                     };
                 }
 
-                // Apply Hold with reason TAP and comment NO PART NUMBER
+                // Apply Hold with reason TAP and dynamic comment based on missing field(s)
                 var holdResult = await _featsService.HoldHolderAsync(
                     holder: holder,
                     holderType: null,
                     holdReasonCode: "TAP",
-                    comment: "NO PART NUMBER",
+                    comment: validationHoldComment,
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
 
                 _logger.LogInformation(
                     "[SCAN VALIDATION] Hold application - Success={Success}, Message={Message}",
@@ -824,32 +869,24 @@ namespace WDC_STACKER.API.Aggregate
                     };
                 }
 
+                // Dynamic return message based on missing field(s)
+                var returnMessage = missingPartNumber && missingProductName
+                    ? "PartNumber and ProductName are missing. Holder has been moved out to RBF2 and held with reason TAP: NO PART NUMBER AND NO PRODUCT NAME."
+                    : missingPartNumber
+                        ? "PartNumber is missing. Holder has been moved out to RBF2 and held with reason TAP: NO PART NUMBER."
+                        : "ProductName is missing. Holder has been moved out to RBF2 and held with reason TAP: NO PRODUCT NAME.";
+
                 return new ScanHolderJobResponse
                 {
                     Success = false,
                     CanAssign = false,
                     Holder = holder,
-                    Message = "PartNumber is missing. Holder has been moved out to RBF2 and held with reason TAP: NO PART NUMBER.",
+                    Message = returnMessage,
                     HolderJob = row,
                     RawQueryResult = holderJobResult
                 };
             }
             _logger.LogInformation("[SCAN VALIDATION] PASSED - PartNumber/ProductName check");
-
-            if (isFgi && string.IsNullOrWhiteSpace(productName))
-            {
-                _logger.LogWarning(
-                    "[SCAN VALIDATION] FAILED - ProductName is missing");
-                return new ScanHolderJobResponse
-                {
-                    Success = false,
-                    CanAssign = false,
-                    Holder = holder,
-                    Message = "ProductName is missing.",
-                    HolderJob = row,
-                    RawQueryResult = holderJobResult
-                };
-            }
 
             // 5. BinName must be exactly 5 characters for FGI.
             // If not, MoveOut to RBF2.
@@ -866,10 +903,11 @@ namespace WDC_STACKER.API.Aggregate
                 var moveOutResult = await _featsService.MoveOutAsync(
                     holder: holder,
                     holderType: null,
-                    resource: "735617 RBF 2",
-                    nextOp: null,
+                    resource: null,
+                    nextOp: "735617 RBF 2",
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
 
                 _logger.LogInformation(
                     "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
@@ -912,19 +950,110 @@ namespace WDC_STACKER.API.Aggregate
                 holdComment ?? "NULL");
             if (!string.IsNullOrWhiteSpace(holdReason) || !string.IsNullOrWhiteSpace(holdComment))
             {
-                _logger.LogWarning(
-                    "[SCAN VALIDATION] FAILED - Holder has FEATS hold. HoldReason={HoldReason}, HoldComment={HoldComment}",
+                if (isFgi)
+                {
+                    _logger.LogWarning(
+                        "[SCAN VALIDATION] FAILED - Holder has FEATS hold. HoldReason={HoldReason}, HoldComment={HoldComment}",
+                        holdReason ?? "NULL",
+                        holdComment ?? "NULL");
+
+                    // Save hold reason/comment before releasing, so it can be re-applied after MoveOut.
+                    var savedHoldReasonCode = holdReason;
+                    var savedHoldComment = holdComment;
+
+                    var releaseResult = await ReleaseHolderWithRetryAsync(
+                        holder: holder,
+                        holderType: null,
+                        comment: string.Empty,
+                        username: credentials.Username,
+                        password: credentials.Password,
+                        camVersion: camVersion);
+
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] Release - Success={Success}, Message={Message}",
+                        releaseResult.Success,
+                        releaseResult.Message);
+
+                    if (!releaseResult.Success)
+                    {
+                        _logger.LogWarning(
+                            "[SCAN VALIDATION] Release failed, proceeding to MoveOut anyway: {Message}",
+                            releaseResult.Message);
+                    }
+
+                    var moveOutResult = await _featsService.MoveOutAsync(
+                        holder: holder,
+                        holderType: null,
+                        resource: null,
+                        nextOp: "735617 RBF 2",
+                        username: credentials.Username,
+                        password: credentials.Password,
+                        camVersion: camVersion);
+
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
+                        moveOutResult.Success,
+                        moveOutResult.Message);
+
+                    var reapplyHoldResult = await _featsService.HoldHolderAsync(
+                        holder: holder,
+                        holderType: null,
+                        holdReasonCode: savedHoldReasonCode,
+                        comment: savedHoldComment,
+                        username: credentials.Username,
+                        password: credentials.Password,
+                        camVersion: camVersion);
+
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] Re-apply Hold - Success={Success}, Message={Message}",
+                        reapplyHoldResult.Success,
+                        reapplyHoldResult.Message);
+
+                    if (!reapplyHoldResult.Success)
+                    {
+                        var partialMessage = moveOutResult.Success
+                            ? $"Holder was moved to 735617 RBF 2 but NOT re-held: {reapplyHoldResult.Message}"
+                            : $"MoveOut failed ({moveOutResult.Message}) and the holder was NOT re-held: {reapplyHoldResult.Message}";
+
+                        return new ScanHolderJobResponse
+                        {
+                            Success = false,
+                            CanAssign = false,
+                            Holder = holder,
+                            Message = partialMessage,
+                            HolderJob = row,
+                            RawQueryResult = holderJobResult
+                        };
+                    }
+
+                    if (!moveOutResult.Success)
+                    {
+                        return new ScanHolderJobResponse
+                        {
+                            Success = false,
+                            CanAssign = false,
+                            Holder = holder,
+                            Message = $"MoveOut to 735617 RBF 2 failed: {moveOutResult.Message}. Hold was re-applied at the current location.",
+                            HolderJob = row,
+                            RawQueryResult = holderJobResult
+                        };
+                    }
+
+                    return new ScanHolderJobResponse
+                    {
+                        Success = false,
+                        CanAssign = false,
+                        Holder = holder,
+                        Message = $"Holder has FEATS hold. HoldReason: '{savedHoldReasonCode}', HoldComment: '{savedHoldComment}'. Holder was released, moved to 735617 RBF 2, and re-held.",
+                        HolderJob = row,
+                        RawQueryResult = holderJobResult
+                    };
+                }
+
+                _logger.LogInformation(
+                    "[SCAN VALIDATION] PWD Holder has FEATS hold, will be assigned with STATUS=HOLD. HoldReason={HoldReason}, HoldComment={HoldComment}",
                     holdReason ?? "NULL",
                     holdComment ?? "NULL");
-                return new ScanHolderJobResponse
-                {
-                    Success = false,
-                    CanAssign = false,
-                    Holder = holder,
-                    Message = $"Holder has FEATS hold. HoldReason: '{holdReason}', HoldComment: '{holdComment}'",
-                    HolderJob = row,
-                    RawQueryResult = holderJobResult
-                };
             }
             _logger.LogInformation("[SCAN VALIDATION] PASSED - FEATS Hold check");
 
@@ -987,36 +1116,91 @@ namespace WDC_STACKER.API.Aggregate
                     isError,
                     isPassed);
 
-                if (isHoldIssue)
+                if (isHoldIssue) //RELEASE - MOVEOUT - HOLD
                 {
                     _logger.LogWarning(
                         "[SCAN VALIDATION] FAILED - Holder has hold/slider issue for operation '{Operation}'. Response: {Response}",
                         validationOperation,
                         responseUpper);
+
+                    // Save hold reason/comment before releasing, so it can be re-applied after MoveOut.
+                    var savedHoldReasonCode = holdReason;
+                    var savedHoldComment = holdComment;
+
+                    var releaseResult = await ReleaseHolderWithRetryAsync(
+                        holder: holder,
+                        holderType: null,
+                        comment: string.Empty,
+                        username: credentials.Username,
+                        password: credentials.Password,
+                        camVersion: camVersion);
+
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] Release - Success={Success}, Message={Message}",
+                        releaseResult.Success,
+                        releaseResult.Message);
+
+                    if (!releaseResult.Success)
+                    {
+                        _logger.LogWarning(
+                            "[SCAN VALIDATION] Release failed, proceeding to MoveOut anyway: {Message}",
+                            releaseResult.Message);
+                    }
+
                     // MoveOut to RBF2
                     var moveOutResult = await _featsService.MoveOutAsync(
                         holder: holder,
                         holderType: null,
-                        resource: "735617 RBF 2",
-                        nextOp: null,
+                        resource: null,
+                        nextOp: "735617 RBF 2",
                         username: credentials.Username,
-                        password: credentials.Password);
+                        password: credentials.Password,
+                        camVersion: camVersion);
 
                     _logger.LogInformation(
                         "[SCAN VALIDATION] MoveOut to RBF2 - Success={Success}, Message={Message}",
                         moveOutResult.Success,
                         moveOutResult.Message);
-                    if (!moveOutResult.Success)
+
+                    var reapplyHoldResult = await _featsService.HoldHolderAsync(
+                        holder: holder,
+                        holderType: null,
+                        holdReasonCode: savedHoldReasonCode,
+                        comment: savedHoldComment,
+                        username: credentials.Username,
+                        password: credentials.Password,
+                        camVersion: camVersion);
+
+                    _logger.LogInformation(
+                        "[SCAN VALIDATION] Re-apply Hold - Success={Success}, Message={Message}",
+                        reapplyHoldResult.Success,
+                        reapplyHoldResult.Message);
+
+                    if (!reapplyHoldResult.Success)
                     {
-                        _logger.LogError(
-                            "[SCAN VALIDATION] FAILED - MoveOut to RBF2 failed: {Message}",
-                            moveOutResult.Message);
+                        var partialMessage = moveOutResult.Success
+                            ? $"Holder was moved to 735617 RBF 2 but NOT re-held: {reapplyHoldResult.Message}"
+                            : $"MoveOut failed ({moveOutResult.Message}) and the holder was NOT re-held: {reapplyHoldResult.Message}";
+
                         return new ScanHolderJobResponse
                         {
                             Success = false,
                             CanAssign = false,
                             Holder = holder,
-                            Message = $"MoveOut to 735617 RBF 2 failed: {moveOutResult.Message}",
+                            Message = partialMessage,
+                            HolderJob = row,
+                            RawQueryResult = holderJobResult
+                        };
+                    }
+
+                    if (!moveOutResult.Success)
+                    {
+                        return new ScanHolderJobResponse
+                        {
+                            Success = false,
+                            CanAssign = false,
+                            Holder = holder,
+                            Message = $"MoveOut to 735617 RBF 2 failed: {moveOutResult.Message}. Hold was re-applied at the current location.",
                             HolderJob = row,
                             RawQueryResult = holderJobResult
                         };
@@ -1027,7 +1211,7 @@ namespace WDC_STACKER.API.Aggregate
                         Success = false,
                         CanAssign = false,
                         Holder = holder,
-                        Message = $"Holder has hold/slider issue for operation '{validationOperation}'. AHS response: {sliderCheckResult.RawResponse}. Holder has been moved out to RBF2.",
+                        Message = $"Holder has hold/slider issue for operation '{validationOperation}'. AHS response: {sliderCheckResult.RawResponse}. Holder was released, moved to 735617 RBF 2, and re-held.",
                         HolderJob = row,
                         RawQueryResult = holderJobResult
                     };
@@ -1070,6 +1254,8 @@ namespace WDC_STACKER.API.Aggregate
             }
             _logger.LogInformation("[SCAN VALIDATION] PASSED - AHS SliderCheck2 check (all operations)");
 
+            // 7.  Holder QTY Validation
+            // Check if Holder QTY is more than 1
             if (isFgi && !TryGetValidatedHolderQty(row, out _))
             {
                 _logger.LogWarning("[SCAN VALIDATION] FAILED - Holder QTY is invalid");
@@ -1085,7 +1271,7 @@ namespace WDC_STACKER.API.Aggregate
             }
             _logger.LogInformation("[SCAN VALIDATION] PASSED - Holder QTY check");
 
-            // 7. InProcess Validation (Last validation)
+            // 8. InProcess Validation (Last validation)
             // If InProcess is not "True", perform MoveIn then continue
             _logger.LogInformation(
                 "[SCAN VALIDATION] Checking InProcess - InProcess={InProcess}",
@@ -1099,7 +1285,8 @@ namespace WDC_STACKER.API.Aggregate
                     holderType: null,
                     resource: null,
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
 
                 _logger.LogInformation(
                     "[SCAN VALIDATION] MoveIn Result - Success={Success}, Message={Message}",
@@ -1135,7 +1322,8 @@ namespace WDC_STACKER.API.Aggregate
                 var penResult = await ResolveFgiPenNumAsync(
                     experimentId,
                     credentials.Username,
-                    credentials.Password);
+                    credentials.Password,
+                    camVersion);
 
                 if (!penResult.Success)
                 {
@@ -1156,6 +1344,8 @@ namespace WDC_STACKER.API.Aggregate
                     PartNum = partNumber.Trim(),
                     PenNum = penResult.PenNum,
                     ProductName = productName.Trim(),
+                    CamVersion = camVersion,
+                    Job = job,
                     Lec = BuildFgiLecOrNull(
                         config,
                         buildCode,
@@ -1163,6 +1353,7 @@ namespace WDC_STACKER.API.Aggregate
                         productName)
                 };
             }
+        #endregion
 
             // 5. If all validation checks pass, map the target for this holder.
             _logger.LogInformation("[SCAN VALIDATION] All validations passed, mapping target box...");
@@ -1181,6 +1372,7 @@ namespace WDC_STACKER.API.Aggregate
                     Success = false,
                     CanAssign = false,
                     Holder = holder,
+                    CamVersion = camVersion,
                     Message = gridViewBoxMap.Message,
                     HolderJob = row,
                     RawQueryResult = holderJobResult,
@@ -1195,6 +1387,7 @@ namespace WDC_STACKER.API.Aggregate
                 Success = true,
                 CanAssign = true,
                 Holder = holder,
+                CamVersion = camVersion,
                 Message = "Validation Pass!",
                 HolderJob = row,
                 RawQueryResult = holderJobResult,
@@ -1202,7 +1395,6 @@ namespace WDC_STACKER.API.Aggregate
             };
 
         }
-
         public async Task<AssignHolderResponse> AssignHolderAsync(AssignHolderRequest request, string token, string? clientKey)
         {
             var holder = request.Holder.Trim();
@@ -1237,7 +1429,11 @@ namespace WDC_STACKER.API.Aggregate
             {
                 "BuildCode",
                 "BinName",
-                "ProductName"
+                "ProductName",
+                "Job",
+                "SliderCount",
+                "HoldReason",
+                "HoldComment"
             };
 
             if (isFgi)
@@ -1247,19 +1443,38 @@ namespace WDC_STACKER.API.Aggregate
                     "PartNumber",
                     "Experiment",
                     "QuantityGood",
-                    "QuantityLoaded",
-                    "SliderCount"
+                    "QuantityLoaded"
                 });
             }
 
-            var holderJobResult = await ExecuteFeatsQueryAsync(
-                queryType: "HolderJob",
-                fieldNames: holderJobFieldNames.ToArray(),
-                filterName: "Holder",
-                filterValue: holder,
-                recordLimit: 250,
-                username: credentials.Username,
-                password: credentials.Password);
+            FeatsQueryResponse holderJobResult;
+            string? camVersion = WDC_STACKER.API.Models.CamVersion.IsValid(request.CamVersion)
+                ? request.CamVersion!.Trim()
+                : null;
+
+            if (camVersion is not null)
+            {
+                holderJobResult = await ExecuteFeatsQueryAsync(
+                    queryType: "HolderJob",
+                    fieldNames: holderJobFieldNames.ToArray(),
+                    filterName: "Holder",
+                    filterValue: holder,
+                    recordLimit: 250,
+                    username: credentials.Username,
+                    password: credentials.Password,
+                    camVersion: camVersion);
+            }
+            else
+            {
+                (holderJobResult, camVersion) = await ExecuteFeatsQueryAcrossCamVersionsAsync(
+                    queryType: "HolderJob",
+                    fieldNames: holderJobFieldNames.ToArray(),
+                    filterName: "Holder",
+                    filterValue: holder,
+                    recordLimit: 250,
+                    username: credentials.Username,
+                    password: credentials.Password);
+            }
 
             if (!holderJobResult.Success)
             {
@@ -1275,7 +1490,7 @@ namespace WDC_STACKER.API.Aggregate
 
             var row = holderJobResult.ParsedResult.Rows.FirstOrDefault();
 
-            if (row is null)
+            if (row is null || camVersion is null)
             {
                 return new AssignHolderResponse
                 {
@@ -1297,6 +1512,10 @@ namespace WDC_STACKER.API.Aggregate
             var buildCode = GetField(row, "BuildCode");
             var binName = GetField(row, "BinName");
             var productName = GetField(row, "ProductName");
+            var job = GetField(row, "Job");
+            var sliderCount = GetField(row, "SliderCount");
+            var holdReason = GetField(row, "HoldReason");
+            var holdComment = GetField(row, "HoldComment");
             string? lecValue;
             int? holderQty = null;
 
@@ -1332,7 +1551,8 @@ namespace WDC_STACKER.API.Aggregate
                 var penResult = await ResolveFgiPenNumAsync(
                     experimentId,
                     credentials.Username,
-                    credentials.Password);
+                    credentials.Password,
+                    camVersion);
 
                 if (!penResult.Success)
                 {
@@ -1357,6 +1577,11 @@ namespace WDC_STACKER.API.Aggregate
             }
             else
             {
+                if (int.TryParse(sliderCount, out var pwdQty))
+                {
+                    holderQty = pwdQty;
+                }
+
                 // Preserve the original PWD validation and LEC formula.
                 if (string.IsNullOrWhiteSpace(buildCode) ||
                     string.IsNullOrWhiteSpace(productName))
@@ -1426,7 +1651,7 @@ namespace WDC_STACKER.API.Aggregate
                 Holder = holder,
                 BoxName = boxNo,
                 ShipBoxName = isFgi ? shipBoxName : string.Empty,
-                Qty = isFgi ? holderQty : null,
+                Qty = holderQty,
                 PartNum = isFgi
                     ? partNum.Trim()
                     : string.Empty,
@@ -1438,6 +1663,12 @@ namespace WDC_STACKER.API.Aggregate
                 Factory = buildCode,
                 Process = process,
                 BinName = binName,
+                CamVersion = isFgi ? camVersion : null,
+                Job = job,
+                Status = !isFgi &&
+                         (!string.IsNullOrWhiteSpace(holdReason) || !string.IsNullOrWhiteSpace(holdComment))
+                    ? "HOLD"
+                    : null,
                 UpdateBy = credentials.Username,
                 UpdateTs = DateTime.Now
             };
@@ -1540,6 +1771,13 @@ namespace WDC_STACKER.API.Aggregate
                 : string.Empty;
         }
 
+        private static string? TryGetFieldValue(Dictionary<string, string> row, string fieldName)
+        {
+            return row.TryGetValue(fieldName, out var value)
+                ? value?.Trim()
+                : null;
+        }
+
         private static bool TryGetValidatedHolderQty(Dictionary<string, string> row, out int qty)
         {
             qty = 0;
@@ -1620,7 +1858,8 @@ namespace WDC_STACKER.API.Aggregate
             FeatsQueryResponse? QueryResult)> ResolveFgiPenNumAsync(
                 string experimentId,
                 string username,
-                string password)
+                string password,
+                string camVersion)
         {
             if (string.IsNullOrWhiteSpace(experimentId))
                 return (true, null, null);
@@ -1632,7 +1871,8 @@ namespace WDC_STACKER.API.Aggregate
                 filterValue: experimentId,
                 recordLimit: 1,
                 username: username,
-                password: password);
+                password: password,
+                camVersion: camVersion);
 
             if (!result.Success)
                 return (false, null, result);
@@ -1687,7 +1927,7 @@ namespace WDC_STACKER.API.Aggregate
                 + binName[..4];
         }
 
-        private async Task<(bool Success, string Message, bool IsOnInSiteHold)> CheckHolderInSiteHoldAsync(string holder, string username, string password)
+        private async Task<(bool Success, string Message, bool IsOnInSiteHold)> CheckHolderInSiteHoldAsync(string holder, string username, string password, string camVersion)
         {
             var holderJobResult = await ExecuteFeatsQueryAsync(
                 queryType: "HolderJob",
@@ -1701,7 +1941,8 @@ namespace WDC_STACKER.API.Aggregate
                 filterValue: holder,
                 recordLimit: 250,
                 username: username,
-                password: password);
+                password: password,
+                camVersion: camVersion);
 
             if (!holderJobResult.Success)
             {
@@ -1738,7 +1979,7 @@ namespace WDC_STACKER.API.Aggregate
             );
         }
 
-        private async Task<(bool Success, bool IsOnInSiteHold)> GetCachedHolderInSiteHoldAsync(string holder, string username, string password)
+        private async Task<(bool Success, bool IsOnInSiteHold)> GetCachedHolderInSiteHoldAsync(string holder, string username, string password, string camVersion)
         {
             var cacheKey = holder.Trim();
             var now = DateTime.UtcNow;
@@ -1752,7 +1993,8 @@ namespace WDC_STACKER.API.Aggregate
             var result = await CheckHolderInSiteHoldAsync(
                 holder,
                 username,
-                password);
+                password,
+                camVersion);
 
             if (result.Success)
             {
@@ -1786,11 +2028,15 @@ namespace WDC_STACKER.API.Aggregate
             if (locations.Count == 0)
                 return;
 
-            var holders = locations
-                .Select(location => location.Holder)
-                .Where(holder => !string.IsNullOrWhiteSpace(holder))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var camVersionByHolder = locations
+                .Where(location => !string.IsNullOrWhiteSpace(location.Holder))
+                .GroupBy(location => location.Holder, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.Select(location => location.CamVersion).FirstOrDefault(cv => !string.IsNullOrWhiteSpace(cv)),
+                    StringComparer.OrdinalIgnoreCase);
+
+            var holders = camVersionByHolder.Keys.ToList();
 
             using var gate = new SemaphoreSlim(4);
             var checks = await Task.WhenAll(holders.Select(async holder =>
@@ -1799,10 +2045,15 @@ namespace WDC_STACKER.API.Aggregate
 
                 try
                 {
+                    var holderCamVersion = camVersionByHolder.TryGetValue(holder, out var cv) && WDC_STACKER.API.Models.CamVersion.IsValid(cv)
+                        ? cv!
+                        : WDC_STACKER.API.Models.CamVersion.Cam3_4;
+
                     var check = await GetCachedHolderInSiteHoldAsync(
                         holder,
                         credentials.Username,
-                        credentials.Password);
+                        credentials.Password,
+                        holderCamVersion);
 
                     return (Holder: holder, Check: check);
                 }
@@ -1865,7 +2116,7 @@ namespace WDC_STACKER.API.Aggregate
             }
         }
 
-        private async Task<FeatsQueryResponse> ExecuteFeatsQueryAsync(string queryType, string[] fieldNames, string filterName, string filterValue, int recordLimit, string username, string password)
+        private async Task<FeatsQueryResponse> ExecuteFeatsQueryAsync(string queryType, string[] fieldNames, string filterName, string filterValue, int recordLimit, string username, string password, string camVersion)
         {
              var request = new FeatsQueryRequest
             {
@@ -1882,7 +2133,92 @@ namespace WDC_STACKER.API.Aggregate
                 RecordLimit = recordLimit
             };
 
-            return await _featsService.QueryAsync(request, username, password);
+            return await _featsService.QueryAsync(request, username, password, camVersion);
+        }
+
+        /// <summary>
+        /// Fans out a "Holder"-filtered FEATS query to every enabled cam
+        /// version concurrently and returns the first result that actually
+        /// found a record, along with which cam version produced the hit.
+        /// If both cam versions (incorrectly) return a match, cam3.4 wins
+        /// deterministically and a warning is logged.
+        /// </summary>
+        private async Task<(FeatsQueryResponse Result, string? CamVersion)> ExecuteFeatsQueryAcrossCamVersionsAsync(
+            string queryType,
+            string[] fieldNames,
+            string filterName,
+            string filterValue,
+            int recordLimit,
+            string username,
+            string password)
+        {
+            var enabledCamVersions = _featsService.GetEnabledCamVersions();
+
+            if (enabledCamVersions.Count == 0)
+            {
+                return (
+                    new FeatsQueryResponse
+                    {
+                        Success = false,
+                        Message = "No FEATS cam versions are enabled.",
+                        QueryType = queryType
+                    },
+                    null);
+            }
+
+            var resultsByCamVersion = new Dictionary<string, FeatsQueryResponse>();
+
+            await Task.WhenAll(enabledCamVersions.Select(async camVersion =>
+            {
+                var result = await ExecuteFeatsQueryAsync(
+                    queryType,
+                    fieldNames,
+                    filterName,
+                    filterValue,
+                    recordLimit,
+                    username,
+                    password,
+                    camVersion);
+
+                lock (resultsByCamVersion)
+                {
+                    resultsByCamVersion[camVersion] = result;
+                }
+            }));
+
+            // Tie-break: cam3.4 wins if both cam versions return a match.
+            var orderedCamVersions = enabledCamVersions
+                .OrderBy(camVersion => string.Equals(camVersion, WDC_STACKER.API.Models.CamVersion.Cam3_4, StringComparison.OrdinalIgnoreCase) ? 0 : 1);
+
+            var matches = orderedCamVersions
+                .Where(camVersion =>
+                    resultsByCamVersion.TryGetValue(camVersion, out var result) &&
+                    result.Success &&
+                    result.ParsedResult.Rows.Count > 0)
+                .ToList();
+
+            if (matches.Count > 1)
+            {
+                _logger.LogWarning(
+                    "[CAM SCAN] Holder '{FilterValue}' matched in multiple cam versions ({CamVersions}). Prioritizing cam3.4.",
+                    filterValue,
+                    string.Join(", ", matches));
+            }
+
+            if (matches.Count > 0)
+            {
+                var chosenCamVersion = matches[0];
+                return (resultsByCamVersion[chosenCamVersion], chosenCamVersion);
+            }
+
+            // No match found in any enabled cam version. Prefer returning a
+            // technical failure (if any) over a plain "not found", so
+            // callers see a real error message when FEATS itself failed.
+            var failedResult = orderedCamVersions
+                .Select(camVersion => resultsByCamVersion[camVersion])
+                .FirstOrDefault(result => !result.Success);
+
+            return (failedResult ?? resultsByCamVersion[orderedCamVersions.First()], null);
         }
 
         public Task<List<BoxAssignment>> GetBoxAssignmentsAsync(string boxName, string? clientKey)
@@ -2008,12 +2344,18 @@ namespace WDC_STACKER.API.Aggregate
 
                 record.WasReviewedForHold = true;
 
+                var recordCamVersion = await _stackerSqlService.GetHolderCamVersionAsync(record.Holder, "FGI");
+                var resolvedRecordCamVersion = WDC_STACKER.API.Models.CamVersion.IsValid(recordCamVersion)
+                    ? recordCamVersion!
+                    : WDC_STACKER.API.Models.CamVersion.Cam3_4;
+
                 var holdCheck =
                     await CheckHolderHoldsAsync(
                         record.Holder,
                         credentials.Username,
                         credentials.Password,
-                        holdValidationOperations);
+                        holdValidationOperations,
+                        resolvedRecordCamVersion);
 
                 if (!holdCheck.Success)
                 {
@@ -2057,7 +2399,7 @@ namespace WDC_STACKER.API.Aggregate
         /// InSite hold and is not on AHS hold for any of the configured
         /// <see cref="CapacityConfig.HoldValidationOperations"/>.
         /// </summary>
-        private async Task<(bool Success, string Message, bool IsOnHold, string HoldSource)> CheckHolderHoldsAsync(string holder, string username, string password, IReadOnlyList<string> holdValidationOperations)
+        private async Task<(bool Success, string Message, bool IsOnHold, string HoldSource)> CheckHolderHoldsAsync(string holder, string username, string password, IReadOnlyList<string> holdValidationOperations, string camVersion)
         {
             var cacheKey = holder.ToUpperInvariant();
 
@@ -2071,7 +2413,8 @@ namespace WDC_STACKER.API.Aggregate
                 await CheckHolderInSiteHoldAsync(
                     holder,
                     username,
-                    password);
+                    password,
+                    camVersion);
 
             if (!inSiteHoldCheck.Success)
             {
@@ -2104,14 +2447,14 @@ namespace WDC_STACKER.API.Aggregate
         /// 2. Query(HolderJob) for shippingId — must return a record with a
         ///    ChildJobCount value (confirms the ShipBox is empty/available).
         /// </summary>
-        private async Task<(bool Success, string Message)> VerifyShipBoxAsync(string shippingId, string username, string password)
+        private async Task<(bool Success, string Message, string? CamVersion)> VerifyShipBoxAsync(string shippingId, string username, string password)
         {
             if (string.IsNullOrWhiteSpace(shippingId))
             {
-                return (false, "ShippingId is required.");
+                return (false, "ShippingId is required.", null);
             }
 
-            var holderResult = await ExecuteFeatsQueryAsync(
+            var (holderResult, resolvedCamVersion) = await ExecuteFeatsQueryAcrossCamVersionsAsync(
                 queryType: "Holder",
                 fieldNames: ["Holder", "HolderType"],
                 filterName: "Holder",
@@ -2122,21 +2465,21 @@ namespace WDC_STACKER.API.Aggregate
 
             if (!holderResult.Success)
             {
-                return (false, holderResult.Message);
+                return (false, holderResult.Message, null);
             }
 
             var holderRow = holderResult.ParsedResult.Rows.FirstOrDefault();
 
-            if (holderRow is null)
+            if (holderRow is null || resolvedCamVersion is null)
             {
-                return (false, $"ShippingId '{shippingId}' was not found in FEATS.");
+                return (false, $"ShippingId '{shippingId}' was not found in FEATS.", null);
             }
 
             var holderType = GetField(holderRow, "HolderType");
 
             if (!string.Equals(holderType, "SHPBOX", StringComparison.OrdinalIgnoreCase))
             {
-                return (false, $"ShippingId '{shippingId}' is not a ShipBox (HolderType={holderType}).");
+                return (false, $"ShippingId '{shippingId}' is not a ShipBox (HolderType={holderType}).", null);
             }
 
             var holderJobResult = await ExecuteFeatsQueryAsync(
@@ -2146,11 +2489,12 @@ namespace WDC_STACKER.API.Aggregate
                 filterValue: shippingId,
                 recordLimit: 1,
                 username: username,
-                password: password);
+                password: password,
+                camVersion: resolvedCamVersion);
 
             if (!holderJobResult.Success)
             {
-                return (false, holderJobResult.Message);
+                return (false, holderJobResult.Message, null);
             }
 
             var holderJobRow = holderJobResult.ParsedResult.Rows.FirstOrDefault();
@@ -2158,7 +2502,7 @@ namespace WDC_STACKER.API.Aggregate
             // No record = shipbox is empty (pass)
             if (holderJobRow is null)
             {
-                return (true, "ShipBox verified (empty).");
+                return (true, "ShipBox verified (empty).", resolvedCamVersion);
             }
 
             var childJobCount = GetField(holderJobRow, "ChildJobCount");
@@ -2166,18 +2510,18 @@ namespace WDC_STACKER.API.Aggregate
             // ChildJobCount is null/empty/0 = shipbox is empty (pass)
             if (string.IsNullOrWhiteSpace(childJobCount) || childJobCount == "0")
             {
-                return (true, "ShipBox verified (empty).");
+                return (true, "ShipBox verified (empty).", resolvedCamVersion);
             }
 
             // ChildJobCount > 0 = shipbox has child holders (fail)
-            return (false, $"ShippingId '{shippingId}' is not empty (has {childJobCount} child holders).");
+            return (false, $"ShippingId '{shippingId}' is not empty (has {childJobCount} child holders).", null);
         }
 
         /// <summary>
         /// "AddJob()" FEATS transaction of the Job Withdrawal flow: groups
         /// the verified withdrawal holders under the entered Shipping Id.
         /// </summary>
-        private async Task<(bool Success, string Message)> AddJobForWithdrawalAsync(string shippingId, IReadOnlyList<string> holders, string token)
+        private async Task<(bool Success, string Message)> AddJobForWithdrawalAsync(string shippingId, IReadOnlyList<string> holders, string token, string camVersion)
         {
             if (!_credentialStore.TryGet(token, out var credentials))
             {
@@ -2199,25 +2543,28 @@ namespace WDC_STACKER.API.Aggregate
                 newHolders: newHolders,
                 allowMixingJobAttributes: true,
                 username: credentials.Username,
-                password: credentials.Password);
+                password: credentials.Password,
+                camVersion: camVersion);
         }
 
         /// <summary>
         /// Public entry point so the client can verify a Shipping Id (ShipBox)
         /// against FEATS before the operator proceeds to scan/verify Holders.
-        /// Wraps <see cref="VerifyShipBoxAsync"/>.
+        /// Wraps <see cref="VerifyShipBoxAsync"/>. The resolved CamVersion is
+        /// returned so the client can carry it through the rest of the
+        /// withdrawal flow (scanning holders, checkhold, addjob, moveout).
         /// </summary>
-        public async Task<(bool Success, string Message)> VerifyFgiWithdrawalShipBoxAsync(string shippingId, string token)
+        public async Task<(bool Success, string Message, string? CamVersion)> VerifyFgiWithdrawalShipBoxAsync(string shippingId, string token)
         {
             if (!_credentialStore.TryGet(token, out var credentials))
             {
-                return (false, "Invalid or expired token.");
+                return (false, "Invalid or expired token.", null);
             }
 
             return await VerifyShipBoxAsync(shippingId, credentials.Username, credentials.Password);
         }
 
-        public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, string shippingId, IReadOnlyCollection<string> includedHolders, string token)
+        public async Task<FgiWithdrawalDisassociationResult> DisassociateFgiWithdrawalRequestAsync( long requestId, IReadOnlyCollection<string> includedHolders, string shippingId, string token)
         {
             if (!_credentialStore.TryGet(token, out var credentials))
             {
@@ -2225,65 +2572,267 @@ namespace WDC_STACKER.API.Aggregate
                 {
                     Success = false,
                     Message = "Invalid or expired token."
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(shippingId))
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = "ShippingId is required."
                 };
             }
 
             // Clear preview cache since data will change after successful disassociation
             _previewCache.Clear();
 
-            var shipBoxCheck = await VerifyShipBoxAsync(shippingId, credentials.Username, credentials.Password);
-
-            if (!shipBoxCheck.Success)
+            // Get cam version from the first holder for withdrawal feats
+            var firstHolder = includedHolders.FirstOrDefault();
+            if (firstHolder == null)
             {
                 return new FgiWithdrawalDisassociationResult
                 {
                     Success = false,
-                    Message = shipBoxCheck.Message
+                    Message = "No holders in withdrawal batch."
                 };
             }
 
-        //ADD JOB TRANSACTION
-            var addJobResult = await AddJobForWithdrawalAsync(
-                shippingId,
-                includedHolders.ToList(),
-                token);
-
-            if (!addJobResult.Success)
+            var withdrawalCamVersion = await _stackerSqlService.GetHolderCamVersionAsync(firstHolder, "FGI");
+            if (string.IsNullOrWhiteSpace(withdrawalCamVersion))
             {
                 return new FgiWithdrawalDisassociationResult
                 {
                     Success = false,
-                    Message = addJobResult.Message
+                    Message = $"Unable to determine cam version for holder '{firstHolder}'."
                 };
             }
-        
 
-        //MOVE-OUT TRANSACTION
-            if (!_credentialStore.TryGet(token, out var moveOutCredentials))
+            // Defensive check: every holder in this withdrawal batch must
+            // share the same cam version (batching should
+            // already guarantee this via IsCompatibleFgiBox uniformity).
+            foreach (var includedHolder in includedHolders)
+            {
+                var includedHolderCamVersion = await _stackerSqlService.GetHolderCamVersionAsync(includedHolder, "FGI");
+
+                if (!string.Equals(includedHolderCamVersion?.Trim(), withdrawalCamVersion, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new FgiWithdrawalDisassociationResult
+                    {
+                        Success = false,
+                        Message = $"Holder '{includedHolder}' cam version ('{includedHolderCamVersion ?? "unknown"}') does not match first holder cam version ('{withdrawalCamVersion}')."
+                    };
+                }
+            }
+   
+   #region FEATS for Withdrawal
+ 
+        //FORK HERE DEPENDEING ON THE CAMVERSION
+        //CAM3: ATTACHJOB(SHIPPINGID, 'SHPBOX'), MOVEOUT(SHIPPINGID), ADDJOB(), SETSHIP(SHIPPINGID, 'SHPBOX', 'ShipToSite'), TRANSFERHOLDERJOB(), SHIP1(SHIPPINGID, 'SHPBOX')
+        //CAM7: ADDJOB(), MOVEOUT(SHIPPINGID)
+ 
+        var isCam3 = string.Equals(withdrawalCamVersion, WDC_STACKER.API.Models.CamVersion.Cam3_4, StringComparison.OrdinalIgnoreCase);
+ 
+        if (isCam3)
+        {
+            // Query HolderJob for the first holder to get job attributes for AttachJob
+            if (firstHolder == null)
             {
                 return new FgiWithdrawalDisassociationResult
                 {
                     Success = false,
-                    Message = "Invalid or expired token."
+                    Message = "No holders in withdrawal batch for CAM3 AttachJob."
+                };
+            }
+ 
+            var holderJobQueryResult = await ExecuteFeatsQueryAsync(
+                queryType: "HolderJob",
+                fieldNames: new[] { "ISCDSEM", "CDSEMSAMPLEPLAN", "WAFERNUM", "ROUTING", "SEGMENT", "CLASSNAME", "PRODUCTNAME", "MINORREV", "FACTORY", "BUILDCODE", "EXPERIMENT", "PTSJOBNUM" },
+                filterName: "Holder",
+                filterValue: firstHolder,
+                recordLimit: 1,
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: withdrawalCamVersion);
+ 
+            if (!holderJobQueryResult.Success || holderJobQueryResult.ParsedResult.Rows.Count == 0)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = $"Failed to query HolderJob for first holder '{firstHolder}': {holderJobQueryResult.Message}"
+                };
+            }
+ 
+            var jobAttributesRow = holderJobQueryResult.ParsedResult.Rows[0];
+ 
+            // CAM3 FLOW: ATTACHJOB(SHIPPINGID, 'SHPBOX')
+            var attachJobResult = await _featsService.AttachJobAsync(
+                holder: shippingId,
+                holderType: "SHPBOX",
+                holderGeometry: "1X24",
+                startReason: "G5START",
+                owner: "MFG",
+                isCdSem: TryGetFieldValue(jobAttributesRow, "ISCDSEM"),
+                cdSemSamplePlan: TryGetFieldValue(jobAttributesRow, "CDSEMSAMPLEPLAN"),
+                waferNum: TryGetFieldValue(jobAttributesRow, "WAFERNUM"),
+                routing: TryGetFieldValue(jobAttributesRow, "ROUTING"),
+                segment: TryGetFieldValue(jobAttributesRow, "SEGMENT"),
+                classCode: TryGetFieldValue(jobAttributesRow, "CLASSNAME"),
+                productName: TryGetFieldValue(jobAttributesRow, "PRODUCTNAME"),
+                minorRev: TryGetFieldValue(jobAttributesRow, "MINORREV"),
+                factory: TryGetFieldValue(jobAttributesRow, "FACTORY"),
+                buildCode: TryGetFieldValue(jobAttributesRow, "BUILDCODE"),
+                experiment: TryGetFieldValue(jobAttributesRow, "EXPERIMENT"),
+                ptsJobNum: TryGetFieldValue(jobAttributesRow, "PTSJOBNUM"),
+                username: credentials.Username,
+                password: credentials.Password);
+ 
+            if (!attachJobResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = $"CAM3 AttachJob failed: {attachJobResult.Message}"
+                };
+            }
+ 
+            // CAM3 FLOW: SUPERMOVE(SHIPPINGID)
+            var moveOutShippingBoxResult = await _featsService.SuperMoveAsync(
+                holder: shippingId,
+                holderType: null,
+                operation: "735630 FGI",
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: withdrawalCamVersion);
+ 
+            if (!moveOutShippingBoxResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = $"CAM3 SuperMove (shipping box) failed: {moveOutShippingBoxResult.Message}"
                 };
             }
 
+            // CAM3 FLOW: MOVEIN(SHIPPINGID)
+            var moveInShippingBoxResult = await _featsService.MoveInAsync(
+                holder: shippingId,
+                holderType: null,
+                resource: null,
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: withdrawalCamVersion);
+
+            if (!moveInShippingBoxResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = $"CAM3 MoveIn (shipping box) failed: {moveInShippingBoxResult.Message}"
+                };
+            }
+        }
+ 
+        // COMMON: ADDJOB() (both CAM3 and CAM7)
+        var addJobResult = await AddJobForWithdrawalAsync(
+            shippingId,
+            includedHolders.ToList(),
+            token,
+            withdrawalCamVersion);
+ 
+        if (!addJobResult.Success)
+        {
+            return new FgiWithdrawalDisassociationResult
+            {
+                Success = false,
+                Message = addJobResult.Message
+            };
+        }
+ 
+        if (isCam3)
+        {
+            // CAM3 FLOW: SETSHIP(SHIPPINGID, 'SHPBOX', 'ShipToSite')
+            var setShipResult = await _featsService.SetShipmentDestinationAsync(
+                holder: shippingId,
+                holderType: "SHPBOX",
+                shipmentDestination: "ShipToSite",
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: withdrawalCamVersion);
+ 
+            if (!setShipResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = $"CAM3 SetShipmentDestination failed: {setShipResult.Message}"
+                };
+            }
+ 
+            // CAM3 FLOW: TRANSFERHOLDERJOB() - loop through individual holders
+            foreach (var holder in includedHolders)
+            {
+                var transferJobResult = await _featsService.TransferHolderJobAsync(
+                    srcHolder: holder,
+                    srcHolderType: "MATTRA",
+                    dstHolder: $"{holder}-1",
+                    dstHolderType: "MATTRADMY",
+                    transposeFormula: null,
+                    newHolderGeometry: null,
+                    username: credentials.Username,
+                    password: credentials.Password,
+                    camVersion: withdrawalCamVersion);
+ 
+                if (!transferJobResult.Success)
+                {
+                    return new FgiWithdrawalDisassociationResult
+                    {
+                        Success = false,
+                        Message = $"CAM3 TransferHolderJob failed for holder '{holder}': {transferJobResult.Message}"
+                    };
+                }
+            }
+ 
+            // CAM3 FLOW: SHIP1(SHIPPINGID, 'SHPBOX') testing
+            var shipResult = await _featsService.Ship1Async(
+                holder: shippingId,
+                holderType: "SHPBOX",
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: withdrawalCamVersion);
+ 
+            if (!shipResult.Success)
+            {
+                return new FgiWithdrawalDisassociationResult
+                {
+                    Success = false,
+                    Message = $"CAM3 Ship1 failed: {shipResult.Message}"
+                };
+            }
+        }
+        else
+        {
+            // CAM7 FLOW: MOVEOUT(SHIPPINGID) TESTING
             var moveOutResult = await _featsService.MoveOutAsync(
                 holder: shippingId,
                 holderType: null,
                 resource: null,
-                nextOp: null,
-                username: moveOutCredentials.Username,
-                password: moveOutCredentials.Password);
-
+                nextOp: "735617 RBF 2",
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: withdrawalCamVersion);
+ 
             if (!moveOutResult.Success)
             {
                 return new FgiWithdrawalDisassociationResult
                 {
                     Success = false,
-                    Message = moveOutResult.Message
+                    Message = $"CAM7 MoveOut failed: {moveOutResult.Message}"
                 };
             }
+        }
+    #endregion
 
             var result = await _stackerSqlService
                 .DisassociateFgiWithdrawalAsync(
@@ -2370,10 +2919,16 @@ namespace WDC_STACKER.API.Aggregate
 
                 try
                 {
+                    var holderCamVersion = await _stackerSqlService.GetHolderCamVersionAsync(holderGroup.Key, process);
+                    var resolvedHolderCamVersion = WDC_STACKER.API.Models.CamVersion.IsValid(holderCamVersion)
+                        ? holderCamVersion!
+                        : WDC_STACKER.API.Models.CamVersion.Cam3_4;
+
                     var check = await GetCachedHolderInSiteHoldAsync(
                         holderGroup.Key,
                         credentials.Username,
-                        credentials.Password);
+                        credentials.Password,
+                        resolvedHolderCamVersion);
 
                     if (!check.Success || !check.IsOnInSiteHold)
                         return;
@@ -2407,8 +2962,17 @@ namespace WDC_STACKER.API.Aggregate
                 );
             }
 
-            //-- INSIGHT HOLD CHECK :START -----------------------------------------------\\
-            var holdCheck = await CheckHolderInSiteHoldAsync(holder, credentials.Username, credentials.Password);
+            var process = ResolveProcess(clientKey);
+
+            //-- RESOLVE STORED CAMVERSION: START ----------------------------------------\
+            var storedCamVersion = await _stackerSqlService.GetHolderCamVersionAsync(holder, process);
+            var camVersion = WDC_STACKER.API.Models.CamVersion.IsValid(storedCamVersion)
+                ? storedCamVersion!
+                : WDC_STACKER.API.Models.CamVersion.Cam3_4;
+            //-- RESOLVE STORED CAMVERSION: END -------------------------------------------//
+
+            //-- INSIGHT HOLD CHECK :START -----------------------------------------------\
+            var holdCheck = await CheckHolderInSiteHoldAsync(holder, credentials.Username, credentials.Password, camVersion);
 
             if (!holdCheck.Success)
             {
@@ -2429,14 +2993,15 @@ namespace WDC_STACKER.API.Aggregate
             }
             //-- INSIGHT HOLD CHECK :END -----------------------------------------------//
 
-            //-- MOVE-OUT TRANSACTION: START---------------------------------------------\\
+            //-- MOVE-OUT TRANSACTION: START---------------------------------------------\
             var moveOutResult = await _featsService.MoveOutAsync(
                 holder: holder,
                 holderType: null,
                 resource: null,
                 nextOp: null,
                 username: credentials.Username,
-                password: credentials.Password
+                password: credentials.Password,
+                camVersion: camVersion
             );
             if (!moveOutResult.Success)
             {
@@ -2448,8 +3013,7 @@ namespace WDC_STACKER.API.Aggregate
             }
             //-- MOVE-OUT TRANSACTION: END-----------------------------------------------//
 
-            //-- SQL DELETE for HOLDER_ASSIGN: START------------------------------------\\
-            var process = ResolveProcess(clientKey);
+            //-- SQL DELETE for HOLDER_ASSIGN: START------------------------------------\
             var deleted = await _stackerSqlService.DisassociateHolderAsync(holder, process);
             if (!deleted)
             {
@@ -2472,16 +3036,7 @@ namespace WDC_STACKER.API.Aggregate
             );
         }
 
-        /// <summary>
-        /// FGI-only "Disassociate" action for a held Holder in the Job Scanning
-        /// grid (Rack -&gt; Box -&gt; ShipBox -&gt; Holder). Unlike
-        /// <see cref="DisassociateHolderAsync"/> (base client, RELEASE-status
-        /// holders), this queries the holder's current FEATS hold, releases
-        /// it, moves the holder to RBF2, then re-applies the same hold at the
-        /// new location before removing it from the local HOLDER_ASSIGN grid.
-        /// This is a fully independent flow and does not share logic with the
-        /// base client's disassociate action.
-        /// </summary>
+        
         public async Task<(bool Success, string Message, List<BoxView> Boxes)> DisassociateFgiHolderAsync(string holder, string token, string? clientKey)
         {
             if (!_credentialStore.TryGet(token, out var credentials))
@@ -2496,6 +3051,11 @@ namespace WDC_STACKER.API.Aggregate
             var process = ResolveProcess(clientKey);
             var rbf2Operation = _config["Stacker:FgiRbf2Operation"] ?? DefaultFgiRbf2Operation;
 
+            var storedCamVersion = await _stackerSqlService.GetHolderCamVersionAsync(holder, process);
+            var camVersion = WDC_STACKER.API.Models.CamVersion.IsValid(storedCamVersion)
+                ? storedCamVersion!
+                : WDC_STACKER.API.Models.CamVersion.Cam3_4;
+
             //-- STEP 1: QUERY HOLDER HOLD INFO: START -----------------------------------\\
             FeatsQueryResponse holderJobResult;
             try
@@ -2507,7 +3067,8 @@ namespace WDC_STACKER.API.Aggregate
                     filterValue: holder,
                     recordLimit: 250,
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
             }
             catch (Exception ex)
             {
@@ -2568,33 +3129,19 @@ namespace WDC_STACKER.API.Aggregate
             }
 
             //-- STEP 2: RELEASE HOLDER: START --------------------------------------------\\
-            (bool Success, string Message) releaseResult;
-            try
-            {
-                releaseResult = await _featsService.ReleaseHolderAsync(
-                    holder: holder,
-                    holderType: null,
-                    comment: string.Empty,
-                    username: credentials.Username,
-                    password: credentials.Password);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[FGI DISASSOCIATE] ReleaseHolder threw for holder={Holder}", holder);
-                return (
-                    false,
-                    $"Failed to release holder: {ex.Message}",
-                    new List<BoxView>()
-                );
-            }
+            var releaseResult = await ReleaseHolderWithRetryAsync(
+                holder: holder,
+                holderType: null,
+                comment: string.Empty,
+                username: credentials.Username,
+                password: credentials.Password,
+                camVersion: camVersion);
 
             if (!releaseResult.Success)
             {
-                return (
-                    false,
-                    releaseResult.Message,
-                    new List<BoxView>()
-                );
+                _logger.LogWarning(
+                    "[FGI DISASSOCIATE] Release failed, proceeding to MoveOut anyway: {Message}",
+                    releaseResult.Message);
             }
             //-- STEP 2: RELEASE HOLDER: END -----------------------------------------------//
 
@@ -2608,7 +3155,8 @@ namespace WDC_STACKER.API.Aggregate
                     resource: null,
                     nextOp: rbf2Operation,
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
             }
             catch (Exception ex)
             {
@@ -2633,7 +3181,8 @@ namespace WDC_STACKER.API.Aggregate
                     holdReasonCode: holdReasonCode,
                     comment: holdComment,
                     username: credentials.Username,
-                    password: credentials.Password);
+                    password: credentials.Password,
+                    camVersion: camVersion);
             }
             catch (Exception ex)
             {
@@ -2684,6 +3233,65 @@ namespace WDC_STACKER.API.Aggregate
                 "Holder released, moved to RBF2, and re-held successfully.",
                 gridViewResult.Boxes
             );
+        }
+
+        private async Task<(bool Success, string Message)> ReleaseHolderWithRetryAsync(
+            string holder,
+            string? holderType,
+            string comment,
+            string username,
+            string password,
+            string camVersion,
+            int maxAttempts = 3)
+        {
+            (bool Success, string Message) result = (false, "Release was not attempted.");
+
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    result = await _featsService.ReleaseHolderAsync(
+                        holder: holder,
+                        holderType: holderType,
+                        comment: comment,
+                        username: username,
+                        password: password,
+                        camVersion: camVersion);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(
+                        ex,
+                        "[RELEASE RETRY] Attempt {Attempt}/{MaxAttempts} threw for holder={Holder}",
+                        attempt,
+                        maxAttempts,
+                        holder);
+                    result = (false, $"ReleaseHolder threw an exception: {ex.Message}");
+                }
+
+                if (result.Success)
+                {
+                    if (attempt > 1)
+                    {
+                        _logger.LogInformation(
+                            "[RELEASE RETRY] Succeeded on attempt {Attempt}/{MaxAttempts} for holder={Holder}",
+                            attempt,
+                            maxAttempts,
+                            holder);
+                    }
+
+                    return result;
+                }
+
+                _logger.LogWarning(
+                    "[RELEASE RETRY] Attempt {Attempt}/{MaxAttempts} failed for holder={Holder}: {Message}",
+                    attempt,
+                    maxAttempts,
+                    holder,
+                    result.Message);
+            }
+
+            return result;
         }
 
         private static string NormalizeUserId(string username)

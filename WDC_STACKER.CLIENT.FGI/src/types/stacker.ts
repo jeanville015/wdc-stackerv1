@@ -5,6 +5,7 @@ export interface ScanResponse {
     CanAssign: boolean;
     Message: string;
     Holder: string;
+    CamVersion?: string | null;
     HolderJob: Record<string, string>;
     RawQueryResult: FeatsQueryResponse | null;
     GridViewBoxes: BoxView[];
@@ -22,6 +23,8 @@ export interface ShipBoxView {
     ShipBoxListCount: number;
     ShipBoxListPercentage: number;
     HasHeldHolder?: boolean;
+    /** Zero-based indexes (holder-ID ascending order) whose STATUS is HOLD. */
+    HeldHolderPositions?: number[];
     HasReleaseStatus: boolean;
     InSiteHoldHolders?: string[];
     /** Zero-based indexes in the holder-ID ascending assignment order. */
@@ -34,6 +37,7 @@ export interface BoxView {
     PartNum?: string | null;
     PenNum?: string | null;
     ProductName?: string | null;
+    CamVersion?: string | null;
     RackNum: number;
     LayerRowNum: number;
     LayerColNum: number;
@@ -55,6 +59,7 @@ export interface AssignRequest {
     ShipBoxLayerRowNum?: number;
     ShipBoxLayerColNum?: number;
     Process: string;
+    CamVersion?: string | null;
 }
 
 export interface AssignResponse {
@@ -84,6 +89,8 @@ export interface FeatsQueryResponse {
 
 export interface BoxAssignment {
     Holder: string;
+    Job?: string | null;
+    Qty?: number | null;
     ProductName: string;
     Factory: string;
     Lec: string;

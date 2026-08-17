@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Text.RegularExpressions;
 using WDC_STACKER.API.Aggregate;
 using WDC_STACKER.API.Models.Stacker;
 
@@ -281,12 +282,18 @@ namespace WDC_STACKER.API.Controllers.Stacker
 
             if (string.IsNullOrWhiteSpace(shippingId))
             {
-                return BadRequest(new { message = "ShippingId is required." });
+                return BadRequest(
+                    new { message = "ShippingId is required." });
             }
 
             var result = await _aggregate.VerifyFgiWithdrawalShipBoxAsync(shippingId.Trim(), token);
 
-            return Ok(new { success = result.Success, message = result.Message });
+            if (!result.Success)
+            {
+                return Conflict(new { message = result.Message });
+            }
+
+            return Ok(new { message = result.Message, camVersion = result.CamVersion });
         }
 
         [HttpPost( "withdrawal/requests/{requestId:long}/disassociate")]
@@ -313,12 +320,6 @@ namespace WDC_STACKER.API.Controllers.Stacker
             {
                 return BadRequest(
                     new { message = "RequestId is required." });
-            }
-
-            if (string.IsNullOrWhiteSpace(request?.ShippingId))
-            {
-                return BadRequest(
-                    new { message = "ShippingId is required." });
             }
 
             if (request?.IncludedHolders is null ||
@@ -362,12 +363,18 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 });
             }
 
+            if (string.IsNullOrWhiteSpace(request.ShippingId))
+            {
+                return BadRequest(
+                    new { message = "ShippingId is required." });
+            }
+
             var result =
                 await _aggregate
                     .DisassociateFgiWithdrawalRequestAsync(
                         requestId,
-                        request.ShippingId.Trim(),
                         request.IncludedHolders,
+                        request.ShippingId,
                         token);
 
             if (!result.Success)
@@ -523,7 +530,8 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 return Unauthorized(new { message = "Invalid or expired token." });
             }
 
-            var data = await _aggregate.GetAllHolderAssignmentsForCsvAsync(GetClientKey());
+            var clientKey = GetClientKey();
+            var data = await _aggregate.GetAllHolderAssignmentsForCsvAsync(clientKey);
 
             var csv = GenerateCsv(data);
 
@@ -534,8 +542,9 @@ namespace WDC_STACKER.API.Controllers.Stacker
             Buffer.BlockCopy(bom, 0, csvWithBom, 0, bom.Length);
             Buffer.BlockCopy(csvBytes, 0, csvWithBom, bom.Length, csvBytes.Length);
 
+            var isFgi = string.Equals(clientKey, "WDC_STACKER.CLIENT.FGI", StringComparison.OrdinalIgnoreCase);
             var timestamp = DateTime.Now.ToString("MMM-dd-yyyy_HHmm");
-            var filename = $"{timestamp}_FGI-Stacker_WIP.csv";
+            var filename = $"{timestamp}_{(isFgi ? "FGI" : "PWD")}-Stacker_WIP.csv";
             Response.Headers.Clear();
             Response.Headers.Append("Content-Type", "text/csv; charset=utf-8");
             Response.Headers.Append("Content-Disposition", $"attachment; filename={filename}");
@@ -544,7 +553,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
 
         private string GenerateCsv(List<WDC_STACKER.API.Models.Stacker.CsvExportRow> data)
         {
-            var headers = new[] { "Holder", "Grade", "BlackBox", "ShipBox", "InsertedOn", "Quantity", "Model", "PartNum", "PenNum", "Lec" };
+            var headers = new[] { "Holder", "Job", "Qty", "Grade", "Position", "InsertedOn", "Quantity", "Model", "PartNum", "PenNum", "Lec", "Status" };
             var csv = new System.Text.StringBuilder();
 
             csv.AppendLine(string.Join(",", headers));
@@ -554,20 +563,53 @@ namespace WDC_STACKER.API.Controllers.Stacker
                 var values = new[]
                 {
                     EscapeCsvField(row.Holder),
+                    EscapeCsvField(row.Job),
+                    row.Qty.ToString(),
                     EscapeCsvField(row.Grade),
-                    EscapeCsvField(row.BlackBox),
-                    EscapeCsvField(row.ShipBox),
+                    EscapeCsvField(FormatPosition(row.BlackBox, row.ShipBox)),
                     EscapeCsvField(row.InsertedOn),
                     row.Quantity.ToString(),
                     EscapeCsvField(row.Model),
                     EscapeCsvField(row.PartNum),
                     EscapeCsvField(row.PenNum),
-                    EscapeCsvField(row.Lec)
+                    EscapeCsvField(row.Lec),
+                    EscapeCsvField(row.Status)
                 };
                 csv.AppendLine(string.Join(",", values));
             }
 
             return csv.ToString();
+        }
+
+        private static readonly Regex BlackBoxPositionPattern =
+            new(@"R(\d+)L\d+C(\d+)", RegexOptions.Compiled);
+        private static readonly Regex ShipBoxPositionPattern =
+            new(@"S\d+L\d+C(\d+)", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Formats the raw BlackBox (e.g. "R01L02C01") and ShipBox (e.g. "S01L01C01") names
+        /// into a simplified "R01-B01-S01" position string, matching the client display naming.
+        /// </summary>
+        private string FormatPosition(string blackBox, string shipBox)
+        {
+            var parts = new List<string>();
+
+            var boxMatch = BlackBoxPositionPattern.Match(blackBox ?? string.Empty);
+            if (boxMatch.Success)
+            {
+                parts.Add($"R{int.Parse(boxMatch.Groups[1].Value):00}");
+                parts.Add($"B{int.Parse(boxMatch.Groups[2].Value):00}");
+            }
+
+            var shipMatch = ShipBoxPositionPattern.Match(shipBox ?? string.Empty);
+            if (shipMatch.Success)
+            {
+                parts.Add($"S{int.Parse(shipMatch.Groups[1].Value):00}");
+            }
+
+            return parts.Count > 0
+                ? string.Join("-", parts)
+                : $"{blackBox} {shipBox}".Trim();
         }
 
         private string EscapeCsvField(string field)

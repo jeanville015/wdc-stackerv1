@@ -4,6 +4,7 @@ import type {
     FgiWithdrawalRack,
     FgiWithdrawalShipBox,
 } from "../../types/withdrawal";
+import { formatBoxName, formatRackName } from "../../utils/nameTransformers";
 import {
     columnLabelCellStyle,
     cornerCellStyle,
@@ -28,18 +29,43 @@ interface Props {
 
 const HOLD_RED = "#d23232";
 
+const MINI_SHIPBOX_CELL_SIZE = 22;
+const MINI_SHIPBOX_GAP = 4;
+
+const RACK_BOX_BASE_MIN_WIDTH = 128;
+const RACK_BOX_BASE_MIN_HEIGHT = 128;
+
+const RACK_BOX_HORIZONTAL_ALLOWANCE = 32;
+const RACK_BOX_VERTICAL_ALLOWANCE = 56;
+
+const getMiniShipBoxGridExtent = (slotCount: number) => {
+    const count = Math.max(1, slotCount);
+
+    return (
+        count * MINI_SHIPBOX_CELL_SIZE +
+        Math.max(0, count - 1) * MINI_SHIPBOX_GAP
+    );
+};
+
 const miniShipBoxGridStyle = (
     layerCount: number,
     columnCount: number
-): CSSProperties => ({
-    display: "grid",
-    gridTemplateColumns: `repeat(${Math.max(1, columnCount)}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${Math.max(1, layerCount)}, minmax(0, 1fr))`,
-    gap: "4px",
-    width: "74px",
-    maxWidth: "100%",
-    pointerEvents: "none",
-});
+): CSSProperties => {
+    const rowCount = Math.max(1, layerCount);
+    const resolvedColumnCount = Math.max(1, columnCount);
+
+    return {
+        display: "grid",
+        gridTemplateColumns:
+            `repeat(${resolvedColumnCount}, ${MINI_SHIPBOX_CELL_SIZE}px)`,
+        gridTemplateRows:
+            `repeat(${rowCount}, ${MINI_SHIPBOX_CELL_SIZE}px)`,
+        gap: `${MINI_SHIPBOX_GAP}px`,
+        width: "max-content",
+        marginInline: "auto",
+        pointerEvents: "none",
+    };
+};
 
 const miniShipBoxCellStyle = (
     shipBox: FgiWithdrawalShipBox
@@ -173,6 +199,38 @@ export default function WithdrawalRackPanel({
         (_, index) => index + 1
     );
 
+    const visibleShipBoxRowCount = rack.Boxes.reduce(
+        (maximum, box) =>
+            box.ShipBoxes.reduce(
+                (boxMaximum, shipBox) =>
+                    Math.max(boxMaximum, shipBox.LayerRowNum),
+                maximum
+            ),
+        Math.max(1, shipBoxLayerCount)
+    );
+
+    const visibleShipBoxColumnCount = rack.Boxes.reduce(
+        (maximum, box) =>
+            box.ShipBoxes.reduce(
+                (boxMaximum, shipBox) =>
+                    Math.max(boxMaximum, shipBox.LayerColNum),
+                maximum
+            ),
+        Math.max(1, shipBoxColumnCount)
+    );
+
+    const rackBoxMinimumWidth = Math.max(
+        RACK_BOX_BASE_MIN_WIDTH,
+        getMiniShipBoxGridExtent(visibleShipBoxColumnCount) +
+        RACK_BOX_HORIZONTAL_ALLOWANCE
+    );
+
+    const rackBoxMinimumHeight = Math.max(
+        RACK_BOX_BASE_MIN_HEIGHT,
+        getMiniShipBoxGridExtent(visibleShipBoxRowCount) +
+        RACK_BOX_VERTICAL_ALLOWANCE
+    );
+
     const findBox = (layerNumber: number, columnNumber: number) =>
         rack.Boxes.find(
             (box) =>
@@ -199,7 +257,7 @@ export default function WithdrawalRackPanel({
                             fontSize: "0.98rem",
                         }}
                     >
-                        Rack No. {rack.RackNum}
+                        {formatRackName(rack.RackNum)}
                     </h3>
                 </div>
 
@@ -207,7 +265,9 @@ export default function WithdrawalRackPanel({
                     <div
                         style={rackOverviewGridStyle(
                             columns.length,
-                            layers.length
+                            layers.length,
+                            rackBoxMinimumWidth,
+                            rackBoxMinimumHeight
                         )}
                     >
                         <div
@@ -289,13 +349,13 @@ export default function WithdrawalRackPanel({
                                                 ...(box
                                                     ? {
                                                         ...getEmptyCellStyle(),
-                                                        minHeight: "128px",
                                                         background: "#ffffff",
                                                         border: "1px solid #d9e2ef",
                                                         padding: "0.5rem",
                                                         boxShadow: "0 1px 3px rgba(23,43,77,0.08)",
                                                     }
                                                     : getEmptyCellStyle()),
+                                                minHeight: `${rackBoxMinimumHeight}px`,
                                                 position: "relative",
                                                 cursor: hasShipBoxes
                                                     ? "pointer"
@@ -303,15 +363,15 @@ export default function WithdrawalRackPanel({
                                             }}
                                             aria-label={
                                                 box
-                                                    ? `Open ShipBoxes for ${box.BoxNo}${heldHolders.length > 0 ? `, ${heldHolders.length} holders on in-site hold` : ""}`
+                                                    ? `Open ShipBoxes for ${formatBoxName(box.BoxNo, rack.RackNum)}${heldHolders.length > 0 ? `, ${heldHolders.length} holders on in-site hold` : ""}`
                                                     : "Empty rack cell"
                                             }
                                         >
                                             {box && (
                                                 <>
-                                                    <span className="rack-box-content">
+                                                    <span className="rack-box-content rack-box-content--expanded-mini-grid">
                                                         <span className="rack-box-name">
-                                                            {box.BoxNo}
+                                                            {formatBoxName(box.BoxNo, rack.RackNum)}
                                                         </span>
 
                                                         <MiniShipBoxGrid

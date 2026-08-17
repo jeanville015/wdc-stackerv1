@@ -4,6 +4,7 @@ import type {
 import type {
     FgiWithdrawalShipBox,
 } from "../../types/withdrawal";
+import { formatShipBoxName } from "../../utils/nameTransformers";
 
 interface Props {
     shipBox: FgiWithdrawalShipBox;
@@ -39,24 +40,29 @@ export default function WithdrawalHoldersModal({
             onMouseDown={handleBackdropMouseDown}
         >
             <div
-                className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"
+                className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable box-assignments-dialog"
                 onMouseDown={(event) =>
                     event.stopPropagation()
                 }
             >
-                <div className="modal-content">
-                    <div className="modal-header">
-                        <div className="stacker-modal-header-info">
+                <div className="modal-content box-assignments-modal">
+                    <div className="modal-header box-assignments-modal-header">
+                        <div className="shipbox-modal-heading">
+                            <span className="shipbox-modal-eyebrow">
+                                Ship Box
+                            </span>
+
                             <h5
                                 id="withdrawal-holders-modal-title"
                                 className="modal-title"
                             >
-                                Ship Box: {shipBox.ShipBoxName}
+                                {formatShipBoxName(shipBox.ShipBoxName)}
                             </h5>
 
-                            <div className="stacker-detail-pills">
-                                <span className="stacker-detail-pill">
-                                    <strong>LEC:</strong> {shipBox.Lec}
+                            <div className="shipbox-modal-metadata">
+                                <span>
+                                    <strong>LEC:</strong>
+                                    {shipBox.Lec || "—"}
                                 </span>
                             </div>
                         </div>
@@ -70,65 +76,84 @@ export default function WithdrawalHoldersModal({
                     </div>
 
                     <div className="modal-body">
-                        <div className="table-responsive">
-                            <table className="table table-bordered table-hover align-middle mb-0">
-                                <thead className="table-light">
+                        <div className="table-responsive box-assignments-table-wrap">
+                            <table className="table table-bordered align-middle text-center box-assignments-table">
+                                <thead>
                                     <tr>
                                         <th scope="col">Holder</th>
                                         <th scope="col">Product Name</th>
                                         <th scope="col">Factory</th>
                                         <th scope="col">LEC</th>
                                         <th scope="col">Status</th>
-                                        <th scope="col" className="text-end">
-                                            Qty
-                                        </th>
+                                        <th scope="col">Qty</th>
                                     </tr>
                                 </thead>
 
                                 <tbody>
-                                    {shipBox.Holders.map(
-                                        (holder) => (
-                                            <tr
-                                                key={[
-                                                    holder.Holder,
-                                                    holder.Qty,
-                                                ].join("-")}
-                                                className={[
-                                                    holder.Status === "HOLD" ? "table-danger" : "",
-                                                    holder.IsInSiteHold ? "withdrawal-holder-row is-in-site-hold" : "",
-                                                ].filter(Boolean).join(" ")}
-                                            >
-                                                <td>{holder.Holder}</td>
-                                                <td>{holder.ProductName}</td>
-                                                <td>{holder.Factory}</td>
-                                                <td>{shipBox.Lec}</td>
-                                                <td>
-                                                    {holder.Status}
-                                                    {holder.IsInSiteHold && (
-                                                        <span className="rack-box-in-site-hold-badge" style={{ position: "static", marginLeft: "0.5rem" }}>
-                                                            IN-SITE
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="text-end">
-                                                    {holder.Qty}
-                                                </td>
-                                            </tr>
-                                        )
-                                    )}
+                                    {shipBox.Holders.map((holder) => {
+                                        const status = (holder.Status ?? "").trim();
+                                        const isHeld =
+                                            status.toUpperCase() === "HOLD";
+                                        const isInSiteHold =
+                                            Boolean(holder.IsInSiteHold);
 
-                                    {shipBox.Holders.length ===
-                                        0 && (
-                                            <tr>
-                                                <td
-                                                    colSpan={6}
-                                                    className="text-center text-muted p-4"
-                                                >
-                                                    No holder records
-                                                    were found.
+                                        return (
+                                            <tr
+                                                key={[holder.Holder, holder.Qty].join("-")}
+                                                className={
+                                                    isHeld || isInSiteHold
+                                                        ? "box-assignment-row--held"
+                                                        : undefined
+                                                }
+                                            >
+                                                <td className="box-assignment-holder">
+                                                    {holder.Holder}
                                                 </td>
+
+                                                <td>{holder.ProductName || "—"}</td>
+                                                <td>{holder.Factory || "—"}</td>
+                                                <td>{shipBox.Lec || "—"}</td>
+
+                                                <td>
+                                                    <span className="d-inline-flex flex-wrap align-items-center justify-content-center gap-2">
+                                                        {isHeld ? (
+                                                            <span className="box-assignment-hold-badge">
+                                                                HOLD
+                                                            </span>
+                                                        ) : status ? (
+                                                            <span>{status}</span>
+                                                        ) : !isInSiteHold ? (
+                                                            <span className="box-assignment-empty-value">
+                                                                —
+                                                            </span>
+                                                        ) : null}
+
+                                                        {isInSiteHold && (
+                                                            <span
+                                                                className="rack-box-in-site-hold-badge"
+                                                                style={{ position: "static" }}
+                                                            >
+                                                                IN-SITE
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </td>
+
+                                                <td>{holder.Qty ?? "—"}</td>
                                             </tr>
-                                        )}
+                                        );
+                                    })}
+
+                                    {shipBox.Holders.length === 0 && (
+                                        <tr>
+                                            <td
+                                                colSpan={6}
+                                                className="text-center text-muted p-4"
+                                            >
+                                                No holder records were found.
+                                            </td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>

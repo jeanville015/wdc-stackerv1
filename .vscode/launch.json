@@ -4,16 +4,30 @@
     {
       "type": "edge",
       "request": "launch",
-      "name": "localhost (Edge)",
-      "url": "http://localhost:5173",
-      "webRoot": "${workspaceFolder}"
+      "name": "PWD Client (Edge)",
+      "url": "http://localhost:5177/WDC_STACKER/",
+      "webRoot": "${workspaceFolder}/WDC_STACKER.CLIENT"
     },
     {
       "type": "chrome",
       "request": "launch",
-      "name": "localhost (Chrome)",
-      "url": "http://localhost:5173",
-      "webRoot": "${workspaceFolder}"
+      "name": "PWD Client (Chrome)",
+      "url": "http://localhost:5177/WDC_STACKER/",
+      "webRoot": "${workspaceFolder}/WDC_STACKER.CLIENT"
+    },
+    {
+      "type": "edge",
+      "request": "launch",
+      "name": "FGI Client (Edge)",
+      "url": "http://localhost:5178/WDC_STACKER_FGI/",
+      "webRoot": "${workspaceFolder}/WDC_STACKER.CLIENT.FGI"
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "FGI Client (Chrome)",
+      "url": "http://localhost:5178/WDC_STACKER_FGI/",
+      "webRoot": "${workspaceFolder}/WDC_STACKER.CLIENT.FGI"
     }
   ]
 }

@@ -1,9 +1,8 @@
 import { Fragment, useState, type CSSProperties } from "react";
 import ShipBoxGridModal from "./ShipBoxGridModal";
 import type { BoxView, ShipBoxView } from "../../types/stacker";
+import { formatBoxName, formatRackName, formatShipBoxName } from "../../utils/nameTransformers";
 import {
-    columnLabelCellStyle,
-    cornerCellStyle,
     getEmptyCellStyle,
     rackCardStyle,
     rackHeaderStyle,
@@ -44,18 +43,43 @@ const TARGET_AMBER_TINT = "#fff9eb";
 const HOLD_RED = "#d23232";
 const HOLD_RED_DARK = "#a51f1f";
 
+const MINI_SHIPBOX_CELL_SIZE = 22;
+const MINI_SHIPBOX_GAP = 4;
+
+const RACK_BOX_BASE_MIN_WIDTH = 128;
+const RACK_BOX_BASE_MIN_HEIGHT = 128;
+
+const RACK_BOX_HORIZONTAL_ALLOWANCE = 32;
+const RACK_BOX_VERTICAL_ALLOWANCE = 56;
+
+const getMiniShipBoxGridExtent = (slotCount: number) => {
+    const count = Math.max(1, slotCount);
+
+    return (
+        count * MINI_SHIPBOX_CELL_SIZE +
+        Math.max(0, count - 1) * MINI_SHIPBOX_GAP
+    );
+};
+
 const miniShipBoxGridStyle = (
     shipBoxLayerCount: number,
     shipBoxBoxCount: number
-): CSSProperties => ({
-    display: "grid",
-    gridTemplateColumns: `repeat(${Math.max(1, shipBoxBoxCount)}, minmax(0, 1fr))`,
-    gridTemplateRows: `repeat(${Math.max(1, shipBoxLayerCount)}, minmax(0, 1fr))`,
-    gap: "4px",
-    width: "74px",
-    maxWidth: "100%",
-    pointerEvents: "none",
-});
+): CSSProperties => {
+    const rowCount = Math.max(1, shipBoxLayerCount);
+    const columnCount = Math.max(1, shipBoxBoxCount);
+
+    return {
+        display: "grid",
+        gridTemplateColumns:
+            `repeat(${columnCount}, ${MINI_SHIPBOX_CELL_SIZE}px)`,
+        gridTemplateRows:
+            `repeat(${rowCount}, ${MINI_SHIPBOX_CELL_SIZE}px)`,
+        gap: `${MINI_SHIPBOX_GAP}px`,
+        width: "max-content",
+        marginInline: "auto",
+        pointerEvents: "none",
+    };
+};
 
 const miniShipBoxCellStyle = (
     shipBox: ShipBoxView,
@@ -168,7 +192,7 @@ function MiniShipBoxGrid({
                         title={
                             shipBox
                                 ? [
-                                    shipBox.ShipBoxName,
+                                    formatShipBoxName(shipBox.ShipBoxName),
                                     isInSiteHold
                                         ? `In-site hold: ${(shipBox.InSiteHoldHolders ?? []).join(", ")}`
                                         : hasHeldHolder
@@ -231,6 +255,46 @@ export default function RackPanel({
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
     const layers = Array.from({ length: Math.max(0, layerCount) }, (_, index) => index + 1);
 
+    const visibleShipBoxRowCount = boxes.reduce(
+        (maximum, box) =>
+            (box.ShipBoxes ?? []).reduce(
+                (boxMaximum, shipBox) =>
+                    Math.max(
+                        boxMaximum,
+                        shipBox.LayerRowNum
+                    ),
+                maximum
+            ),
+        Math.max(1, shipBoxLayerCount)
+    );
+
+    const visibleShipBoxColumnCount = boxes.reduce(
+        (maximum, box) =>
+            (box.ShipBoxes ?? []).reduce(
+                (boxMaximum, shipBox) =>
+                    Math.max(
+                        boxMaximum,
+                        shipBox.LayerColNum
+                    ),
+                maximum
+            ),
+        Math.max(1, shipBoxBoxCount)
+    );
+
+    const rackBoxMinimumWidth = Math.max(
+        RACK_BOX_BASE_MIN_WIDTH,
+        getMiniShipBoxGridExtent(
+            visibleShipBoxColumnCount
+        ) + RACK_BOX_HORIZONTAL_ALLOWANCE
+    );
+
+    const rackBoxMinimumHeight = Math.max(
+        RACK_BOX_BASE_MIN_HEIGHT,
+        getMiniShipBoxGridExtent(
+            visibleShipBoxRowCount
+        ) + RACK_BOX_VERTICAL_ALLOWANCE
+    );
+
     const findBox = (layerNumber: number, columnNumber: number) => {
         return boxes.find(
             (box) =>
@@ -245,7 +309,7 @@ export default function RackPanel({
             <article style={rackCardStyle}>
                 <div style={rackHeaderStyle}>
                     <div>
-                        <h3 style={rackTitleStyle}>Rack No. {rackNumber}</h3>
+                        <h3 style={rackTitleStyle}>{formatRackName(rackNumber)}</h3>
                     </div>
                 </div>
 
@@ -273,7 +337,7 @@ export default function RackPanel({
                             fontSize: "0.98rem",
                         }}
                     >
-                        Rack No. {rackNumber}
+                        {formatRackName(rackNumber)}
                     </h3>
 
                     {selectedTargetBox?.RackNum === rackNumber &&
@@ -281,12 +345,12 @@ export default function RackPanel({
                             <p className="rack-target-locator">
                                 <span>Next placement</span>
                                 <span aria-hidden="true">&middot;</span>
-                                <strong>{selectedTargetBox.BoxNo}</strong>
+                                <strong>{formatBoxName(selectedTargetBox.BoxNo, rackNumber)}</strong>
                                 <i
                                     className="fa-solid fa-arrow-right"
                                     aria-hidden="true"
                                 />
-                                <strong>{selectedTargetShipBox.ShipBoxName}</strong>
+                                <strong>{formatShipBoxName(selectedTargetShipBox.ShipBoxName)}</strong>
                             </p>
                         )}
                 </div>
@@ -294,38 +358,17 @@ export default function RackPanel({
 
             <div style={rackScrollStyle}>
                 <div
-                    style={rackOverviewGridStyle(columns.length, layers.length)}
+                    style={{
+                        ...rackOverviewGridStyle(
+                            columns.length,
+                            layers.length,
+                            rackBoxMinimumWidth,
+                            rackBoxMinimumHeight
+                        ),
+                        gridTemplateRows:
+                            `repeat(${Math.max(0, layers.length)}, minmax(${rackBoxMinimumHeight}px, auto))`,
+                    }}
                 >
-                    <div
-                        style={{
-                            ...cornerCellStyle,
-                            display: "flex",
-                            alignItems: "center",
-                            color: "#0b1f55",
-                            fontSize: "0.7rem",
-                            fontWeight: 800,
-                            textTransform: "uppercase",
-                        }}
-                    >
-                        Layer
-                    </div>
-
-                    {columns.map((columnNumber) => (
-                        <div
-                            key={`rack-${rackNumber}-column-${columnNumber}`}
-                            style={{
-                                ...columnLabelCellStyle,
-                                border: 0,
-                                background: "transparent",
-                                boxShadow: "none",
-                                color: "#0b1f55",
-                                fontSize: "0.76rem",
-                            }}
-                        >
-                            {String(columnNumber).padStart(2, "0")}
-                        </div>
-                    ))}
-
                     {layers.map((layerNumber) => (
                         <Fragment key={`rack-${rackNumber}-layer-${layerNumber}`}>
                             <div
@@ -388,7 +431,6 @@ export default function RackPanel({
                                             ...(box
                                                 ? {
                                                     ...getEmptyCellStyle(),
-                                                    minHeight: "128px",
                                                     background: isSelectedTarget
                                                         ? TARGET_AMBER_TINT
                                                         : "#ffffff",
@@ -411,6 +453,7 @@ export default function RackPanel({
                                                             : "0 1px 3px rgba(23,43,77,0.08)",
                                                 }
                                                 : getEmptyCellStyle()),
+                                            minHeight: `${rackBoxMinimumHeight}px`,
                                             position: "relative",
                                             cursor: hasShipBoxes ? "pointer" : "default",
                                         }}
@@ -425,8 +468,8 @@ export default function RackPanel({
                                             (!box
                                                 ? "Empty rack cell"
                                                 : hasShipBoxes
-                                                    ? `Open ShipBoxes for ${box.BoxNo}`
-                                                    : `${box.BoxNo} has no ShipBoxes`) +
+                                                    ? `Open ShipBoxes for ${formatBoxName(box.BoxNo, rackNumber)}`
+                                                    : `${formatBoxName(box.BoxNo, rackNumber)} has no ShipBoxes`) +
                                             (inSiteHoldCount > 0
                                                 ? `, ${inSiteHoldCount} ${inSiteHoldCount === 1 ? "holder" : "holders"} on in-site hold`
                                                 : hasAnyHeldHolder
@@ -441,9 +484,9 @@ export default function RackPanel({
                                     >
                                         {box && (
                                             <>
-                                                <span className="rack-box-content">
+                                                <span className="rack-box-content rack-box-content--expanded-mini-grid">
                                                     <span className="rack-box-name">
-                                                        {box.BoxNo}
+                                                        {formatBoxName(box.BoxNo, rackNumber)}
                                                     </span>
 
                                                     <MiniShipBoxGrid

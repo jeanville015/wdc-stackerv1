@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import {
     getFgiWithdrawalLayoutApi,
     getFgiWithdrawalRequestsApi,
     acknowledgeFgiWithdrawalRequestApi,
     getFgiWithdrawalDisassociationPreviewApi,
     disassociateFgiWithdrawalRequestApi,
+    verifyFgiWithdrawalShipBoxApi,
 } from "../../api/withdrawalApi";
 import type { CapacityConfig } from "../../types/models";
 import type {
@@ -24,7 +25,7 @@ interface Props {
 
 export default function JobWithdrawalPanel({ config }: Props) {
     const { user } = useAuth();
-    const hasToken = Boolean(user?.token);
+    const token = user?.token;
 
     const [requests, setRequests] = useState<FgiWithdrawalRequest[]>([]);
     const [selectedRequest, setSelectedRequest] = useState<FgiWithdrawalRequest | null>(null);
@@ -44,7 +45,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
         useState("");
     const [rack, setRack] = useState<FgiWithdrawalRack | null>(null);
 
-    const [requestsLoading, setRequestsLoading] = useState(hasToken);
+    const [requestsLoading, setRequestsLoading] = useState(true);
     const [layoutLoading, setLayoutLoading] = useState(false);
 
     const [acknowledgingRequestId, setAcknowledgingRequestId] =
@@ -52,9 +53,10 @@ export default function JobWithdrawalPanel({ config }: Props) {
     const [acknowledgeError, setAcknowledgeError] = useState("");
 
     const [requestsError, setRequestsError] = useState("");
-    const displayRequestsError =
-        requestsError || (!hasToken ? "Login token is missing." : "");
     const [layoutError, setLayoutError] = useState("");
+    const authError = token ? "" : "Login token is missing.";
+    const displayRequestsLoading = Boolean(token) && requestsLoading;
+    const displayRequestsError = authError || requestsError;
 
     /*
      * This prevents a slower, previously clicked row from overwriting
@@ -63,16 +65,22 @@ export default function JobWithdrawalPanel({ config }: Props) {
     const selectionSequenceRef = useRef(0);
 
     useEffect(() => {
-        if (!user?.token) {
+        if (!token) {
             return;
         }
 
         let cancelled = false;
 
-        getFgiWithdrawalRequestsApi(user.token)
+        Promise.resolve()
+            .then(() => {
+                if (cancelled) return undefined;
+
+                setRequestsLoading(true);
+                setRequestsError("");
+                return getFgiWithdrawalRequestsApi(token);
+            })
             .then((result) => {
-                if (!cancelled) {
-                    setRequestsError("");
+                if (!cancelled && result) {
                     setRequests(result);
                 }
             })
@@ -94,12 +102,12 @@ export default function JobWithdrawalPanel({ config }: Props) {
         return () => {
             cancelled = true;
         };
-    }, [user?.token]);
+    }, [token]);
 
     const handleRequestSelected = async (
         request: FgiWithdrawalRequest
     ) => {
-        if (!user?.token) {
+        if (!token) {
             setLayoutError("Login token is missing.");
             return;
         }
@@ -120,7 +128,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                 request.PenNum,
                 request.SliderPartNumber,
                 request.Grade,
-                user.token
+                token
             );
 
             /*
@@ -148,7 +156,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
     const handleRequestAcknowledged = async (
         request: FgiWithdrawalRequest
     ) => {
-        if (!user?.token) {
+        if (!token) {
             setAcknowledgeError("Login token is missing.");
             return;
         }
@@ -159,7 +167,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
         try {
             const result = await acknowledgeFgiWithdrawalRequestApi(
                 request.RequestId,
-                user.token
+                token
             );
 
             setRequests((current) =>
@@ -200,7 +208,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
         setDisassociationError("");
         setDisassociationModal(null);
 
-        if (!user?.token) {
+        if (!token) {
             setDisassociationError(
                 "Login token is missing."
             );
@@ -227,7 +235,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                     request.SliderPartNumber,
                     request.Grade,
                     request.ActualOutput ?? 0,
-                    user.token
+                    token
                 );
 
             /*
@@ -249,9 +257,40 @@ export default function JobWithdrawalPanel({ config }: Props) {
         }
     };
 
+    const handleVerifyShippingId = async (
+        shippingId: string
+    ): Promise<{ success: boolean; message: string }> => {
+        if (!token) {
+            return {
+                success: false,
+                message: "Login token is missing. Please sign in again.",
+            };
+        }
+
+        try {
+            const result = await verifyFgiWithdrawalShipBoxApi(
+                shippingId,
+                token
+            );
+
+            return {
+                success: true,
+                message: result.message || "ShippingId verified.",
+            };
+        } catch (error: unknown) {
+            return {
+                success: false,
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "Unable to verify the ShippingId.",
+            };
+        }
+    };
+
     const handleDisassociationConfirmed = async (
-        shippingId: string,
-        includedHolders: string[]
+        includedHolders: string[],
+        shippingId: string
     ): Promise<void> => {
         const modal = disassociationModal;
 
@@ -261,15 +300,9 @@ export default function JobWithdrawalPanel({ config }: Props) {
             );
         }
 
-        if (!user?.token) {
+        if (!token) {
             throw new Error(
                 "Login token is missing. Please sign in again."
-            );
-        }
-
-        if (!shippingId.trim()) {
-            throw new Error(
-                "ShippingId is required."
             );
         }
 
@@ -279,15 +312,19 @@ export default function JobWithdrawalPanel({ config }: Props) {
             );
         }
 
+        if (!shippingId.trim()) {
+            throw new Error("ShippingId is required.");
+        }
+
         setDisassociationError("");
         setDisassociationSuccess("");
 
         const result =
             await disassociateFgiWithdrawalRequestApi(
                 modal.request.RequestId,
-                shippingId,
                 includedHolders,
-                user.token
+                shippingId.trim(),
+                token
             );
 
         setDisassociationSuccess(
@@ -309,7 +346,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                     modal.request.PenNum,
                     modal.request.SliderPartNumber,
                     modal.request.Grade,
-                    user.token
+                    token
                 );
 
             setRack(refreshedRack);
@@ -323,7 +360,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
         }
 
         try {
-            const refreshedRequests = await getFgiWithdrawalRequestsApi(user.token);
+            const refreshedRequests = await getFgiWithdrawalRequestsApi(token);
             setRequests(refreshedRequests);
 
             // Update selected request if it still exists
@@ -348,7 +385,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                 <WithdrawalRequestTable
                     rows={requests}
                     selectedRequest={selectedRequest}
-                    loading={requestsLoading}
+                    loading={displayRequestsLoading}
                     error={displayRequestsError}
                     onRequestSelected={handleRequestSelected}
                 />
@@ -439,6 +476,7 @@ export default function JobWithdrawalPanel({ config }: Props) {
                     request={disassociationModal.request}
                     preview={disassociationModal.preview}
                     onWithdraw={handleDisassociationConfirmed}
+                    onVerifyShippingId={handleVerifyShippingId}
                     onClose={() =>
                         setDisassociationModal(null)
                     }

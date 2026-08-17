@@ -33,8 +33,8 @@ public sealed class FgiWithdrawalDisassociationPreviewView
 
 public sealed class FgiWithdrawalDisassociationRequest
 {
-    public string ShippingId { get; set; } = string.Empty;
     public List<string> IncludedHolders { get; set; } = [];
+    public string ShippingId { get; set; } = string.Empty;
 }
 
 public sealed class FgiWithdrawalDisassociationResult

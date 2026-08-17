@@ -26,7 +26,9 @@ namespace WDC_STACKER.API.Services
 
                     using var context = new PrincipalContext(ContextType.Domain, _domain);
 
-                    var isValid = context.ValidateCredentials(samAccountName, password, ContextOptions.Negotiate);
+                    var userPrincipalName = $"{samAccountName}@{_domain}";
+                    var isValid = context.ValidateCredentials(samAccountName, password, ContextOptions.Negotiate)
+                        || context.ValidateCredentials(userPrincipalName, password, ContextOptions.SimpleBind);
 
                     if (!isValid)
                     {

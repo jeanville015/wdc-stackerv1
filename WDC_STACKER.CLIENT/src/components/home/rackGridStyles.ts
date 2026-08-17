@@ -3,71 +3,11 @@ import type { BoxView } from "../../types/stacker";
 
 const GREY_TONE = "#e8e8e8";
 const BLUE_LIGHT = "#cfe3ff";
-const BLUE_BORDER = "#003d99";
 const GREEN_LIGHT = "#d8f3df";
-const GREEN_BORDER = "#0f6b2e";
 
-type CornerHighlightPosition = "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
-
-export const getBoxHighlightColor = (box: BoxView): string =>
-    box.HasReleaseStatus ? GREEN_BORDER : BLUE_BORDER;
-
-export const getCornerHighlightStyle = (
-    position: CornerHighlightPosition,
-    borderColor: string
-): CSSProperties => {
-    const offset = "-4px";
-    const length = "15px";
-    const thickness = "3px";
-
-    const baseStyle: CSSProperties = {
-        position: "absolute",
-        width: length,
-        height: length,
-        boxSizing: "border-box",
-        pointerEvents: "none",
-        zIndex: 5,
-    };
-
-    switch (position) {
-        case "topLeft":
-            return {
-                ...baseStyle,
-                top: offset,
-                left: offset,
-                borderTop: `${thickness} solid ${borderColor}`,
-                borderLeft: `${thickness} solid ${borderColor}`,
-                borderTopLeftRadius: "8px",
-            };
-        case "topRight":
-            return {
-                ...baseStyle,
-                top: offset,
-                right: offset,
-                borderTop: `${thickness} solid ${borderColor}`,
-                borderRight: `${thickness} solid ${borderColor}`,
-                borderTopRightRadius: "8px",
-            };
-        case "bottomLeft":
-            return {
-                ...baseStyle,
-                bottom: offset,
-                left: offset,
-                borderBottom: `${thickness} solid ${borderColor}`,
-                borderLeft: `${thickness} solid ${borderColor}`,
-                borderBottomLeftRadius: "8px",
-            };
-        case "bottomRight":
-            return {
-                ...baseStyle,
-                right: offset,
-                bottom: offset,
-                borderRight: `${thickness} solid ${borderColor}`,
-                borderBottom: `${thickness} solid ${borderColor}`,
-                borderBottomRightRadius: "8px",
-            };
-    }
-};
+export const TARGET_AMBER = "#f5a300";
+export const TARGET_AMBER_DARK = "#b66a00";
+export const TARGET_AMBER_TINT = "#fff9eb";
 
 const baseLabelCellStyle: CSSProperties = {
     display: "flex",
@@ -173,14 +113,25 @@ export const getEmptyCellStyle = (): CSSProperties => {
 
 export const getMappedCellStyle = (
     box: BoxView,
-    isRecentlyAssigned = false
+    isRecentlyAssigned = false,
+    isTarget = false
 ): CSSProperties => {
-    const isHighlighted = box.IsSuggestedTarget || isRecentlyAssigned;
+    const isHighlighted = isTarget || isRecentlyAssigned;
 
     return {
         ...baseCellStyle,
-        background: box.HasReleaseStatus ? GREEN_LIGHT : BLUE_LIGHT,
-        border: isRecentlyAssigned ? "3px solid #16833a" : "1px solid #8bbcff",
+        background: isRecentlyAssigned
+            ? "#d8f3df"
+            : isTarget
+                ? TARGET_AMBER_TINT
+                : box.HasReleaseStatus
+                    ? GREEN_LIGHT
+                    : BLUE_LIGHT,
+        border: isRecentlyAssigned
+            ? "2px solid #16833a"
+            : isTarget
+                ? `2px solid ${TARGET_AMBER_DARK}`
+                : "1px solid #8bbcff",
         padding: "0.25rem",
         outline: "none",
         outlineOffset: "0",
@@ -188,8 +139,8 @@ export const getMappedCellStyle = (
         animation: isRecentlyAssigned ? "assignedBoxPulse 0.9s ease-out infinite" : undefined,
         boxShadow: isRecentlyAssigned
             ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 12px rgba(22,131,58,0.35)"
-            : box.IsSuggestedTarget
-                ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 10px rgba(0,82,204,0.35)"
+            : isTarget
+                ? `inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(245,163,0,0.25), 0 4px 10px rgba(245,163,0,0.3)`
                 : "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
     };
 };

@@ -75,8 +75,8 @@ export interface FgiWithdrawalDisassociationPreview {
 }
 
 export interface FgiWithdrawalDisassociationRequest {
-    ShippingId: string;
     IncludedHolders: string[];
+    ShippingId: string;
 }
 
 export interface FgiWithdrawalDisassociationResponse {

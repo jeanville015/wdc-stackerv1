@@ -617,6 +617,15 @@ namespace FeatsServiceReference
         [System.ServiceModel.OperationContractAttribute(Action="http://sjhasspdn1.snjtest1.sanjose.ibm.com/FEATS/ShipL1", ReplyAction="*")]
         System.Threading.Tasks.Task ShipL1Async(string Holder, string HolderType);
         
+        [System.ServiceModel.OperationContractAttribute(Action="http://sjhasspdn1.snjtest1.sanjose.ibm.com/FEATS/Ship1", ReplyAction="*")]
+        [System.ServiceModel.XmlSerializerFormatAttribute()]
+        [System.ServiceModel.ServiceKnownTypeAttribute(typeof(null_data))]
+        [System.ServiceModel.ServiceKnownTypeAttribute(typeof(named_parameter_objects[]))]
+        void Ship1(string Holder, string HolderType);
+        
+        [System.ServiceModel.OperationContractAttribute(Action="http://sjhasspdn1.snjtest1.sanjose.ibm.com/FEATS/Ship1", ReplyAction="*")]
+        System.Threading.Tasks.Task Ship1Async(string Holder, string HolderType);
+        
         [System.ServiceModel.OperationContractAttribute(Action="http://sjhasspdn1.snjtest1.sanjose.ibm.com/FEATS/UnShip", ReplyAction="*")]
         [System.ServiceModel.XmlSerializerFormatAttribute()]
         [System.ServiceModel.ServiceKnownTypeAttribute(typeof(null_data))]
@@ -8500,6 +8509,16 @@ namespace FeatsServiceReference
         public System.Threading.Tasks.Task ShipL1Async(string Holder, string HolderType)
         {
             return base.Channel.ShipL1Async(Holder, HolderType);
+        }
+        
+        public void Ship1(string Holder, string HolderType)
+        {
+            base.Channel.Ship1(Holder, HolderType);
+        }
+        
+        public System.Threading.Tasks.Task Ship1Async(string Holder, string HolderType)
+        {
+            return base.Channel.Ship1Async(Holder, HolderType);
         }
         
         public void UnShip(string Holder, string HolderType)

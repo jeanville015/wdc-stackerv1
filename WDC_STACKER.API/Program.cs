@@ -18,7 +18,8 @@ static string RequireConfig(IConfiguration configuration, string key)
         : value;
 }
 
-RequireConfig(builder.Configuration, "SoapApi:FeatsBaseUrl");
+RequireConfig(builder.Configuration, "SoapApi:FeatsEndpoints:CAM3:BaseUrl");
+RequireConfig(builder.Configuration, "SoapApi:FeatsEndpoints:CAM7:BaseUrl");
 RequireConfig(builder.Configuration, "ActiveDirectory:Domain");
 RequireConfig(builder.Configuration, "ConnectionStrings:WdcStackerDb");
 var jwtIssuer = RequireConfig(builder.Configuration, "Jwt:Issuer");
@@ -111,12 +112,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("ReactApp");          // 1st
 
-app.UseHttpsRedirection();        // 2nd
+app.UseAuthentication();          // 2nd
 
-app.UseAuthentication();          // 3rd
+app.UseAuthorization();           // 3rd
 
-app.UseAuthorization();           // 4th
-
-app.MapControllers();             // 5th
+app.MapControllers();             // 4th
 
 app.Run();

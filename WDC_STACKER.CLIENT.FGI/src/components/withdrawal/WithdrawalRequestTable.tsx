@@ -314,7 +314,7 @@ export default function WithdrawalRequestTable({
                         );
                     })}
 
-                    {rows.length === 0 && (
+                    {filteredRows.length === 0 && (
                         <div className="text-center text-muted p-4">
                             No withdrawal requests were found.
                         </div>

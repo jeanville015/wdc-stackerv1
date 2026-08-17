@@ -2,11 +2,10 @@ import { Fragment, useState, type CSSProperties } from "react";
 import BoxAssignmentsModal from "./BoxAssignmentsModal";
 import SegmentedBox from "./SegmentedBox";
 import type { BoxView } from "../../types/stacker";
+import { formatRackName } from "../../utils/nameTransformers";
 import {
     columnLabelCellStyle,
     cornerCellStyle,
-    getBoxHighlightColor,
-    getCornerHighlightStyle,
     getMappedCellStyle,
     getEmptyCellStyle,
     rackCardStyle,
@@ -14,7 +13,9 @@ import {
     rackHeaderStyle,
     rackScrollStyle,
     rackTitleStyle,
-    rowLabelCellStyle, 
+    rowLabelCellStyle,
+    TARGET_AMBER,
+    TARGET_AMBER_DARK,
 } from "./rackGridStyles";
 
 interface RackPanelProps {
@@ -24,6 +25,8 @@ interface RackPanelProps {
     boxCount: number;
     maxItemPerBox: number;
     boxes?: BoxView[];
+    selectedTargetBox?: BoxView | null;
+    isExistingHolderLocation?: boolean;
     onBoxesChanged: (boxes: BoxView[]) => void;
 }
 
@@ -36,7 +39,7 @@ const emptyGridStyle: CSSProperties = {
     fontSize: "0.84rem",
 };
 
-export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], onBoxesChanged, }: RackPanelProps)
+export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCount, boxCount, maxItemPerBox, boxes = [], selectedTargetBox, isExistingHolderLocation, onBoxesChanged, }: RackPanelProps)
 {
     const [selectedBoxName, setSelectedBoxName] = useState<string | null>(null);
     const columns = Array.from({ length: Math.max(0, boxCount) }, (_, index) => index + 1);
@@ -56,7 +59,7 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
             <article style={rackCardStyle}>
                 <div style={rackHeaderStyle}>
                     <div>
-                        <h3 style={rackTitleStyle}>Rack No. {rackNumber}</h3>
+                        <h3 style={rackTitleStyle}>{formatRackName(rackNumber)}</h3>
                     </div>
                 </div>
 
@@ -69,7 +72,7 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
         <article style={rackCardStyle}>
             <div style={rackHeaderStyle}>
                 <div>
-                    <h3 style={rackTitleStyle}>Rack No. {rackNumber}</h3>
+                    <h3 style={rackTitleStyle}>{formatRackName(rackNumber)}</h3>
                 </div>
             </div>
 
@@ -93,6 +96,8 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
                             {columns.map((columnNumber) => {
                                 const box = findBox(layerNumber, columnNumber);
                                 const isRecentlyAssigned = recentlyAssignedBoxNo === box?.BoxNo;
+                                const isTarget = selectedTargetBox?.BoxNo === box?.BoxNo;
+                                const showCheckIcon = isTarget && !isRecentlyAssigned && !isExistingHolderLocation;
 
                                 return (
                                     <button
@@ -101,7 +106,7 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
                                         disabled={!box}
                                         onClick={() => box && setSelectedBoxName(box.BoxNo)}
                                         style={{
-                                            ...(box ? getMappedCellStyle(box, isRecentlyAssigned) : getEmptyCellStyle()),
+                                            ...(box ? getMappedCellStyle(box, isRecentlyAssigned, isTarget) : getEmptyCellStyle()),
                                             position: "relative",
                                             cursor: box ? "pointer" : "default",
                                         }}
@@ -115,13 +120,30 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
                                             <>
                                                 <SegmentedBox box={box} maxItemPerBox={maxItemPerBox} />
 
-                                                {box.IsSuggestedTarget && (
-                                                    <>
-                                                        <span style={getCornerHighlightStyle("topLeft", getBoxHighlightColor(box))} />
-                                                        <span style={getCornerHighlightStyle("topRight", getBoxHighlightColor(box))} />
-                                                        <span style={getCornerHighlightStyle("bottomLeft", getBoxHighlightColor(box))} />
-                                                        <span style={getCornerHighlightStyle("bottomRight", getBoxHighlightColor(box))} />
-                                                    </>
+                                                {showCheckIcon && (
+                                                    <span
+                                                        style={{
+                                                            position: "absolute",
+                                                            top: "-9px",
+                                                            right: "-9px",
+                                                            width: "22px",
+                                                            height: "22px",
+                                                            borderRadius: "50%",
+                                                            background: TARGET_AMBER,
+                                                            border: `2px solid ${TARGET_AMBER_DARK}`,
+                                                            color: "#172b4d",
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            justifyContent: "center",
+                                                            fontSize: "0.68rem",
+                                                            fontWeight: 800,
+                                                            zIndex: 7,
+                                                            pointerEvents: "none",
+                                                            boxShadow: "0 2px 6px rgba(245,163,0,0.4)",
+                                                        }}
+                                                    >
+                                                        <i className="fa-solid fa-check" aria-hidden="true" />
+                                                    </span>
                                                 )}
 
                                                 {isRecentlyAssigned && (

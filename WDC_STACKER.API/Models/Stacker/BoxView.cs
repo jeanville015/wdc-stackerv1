@@ -14,6 +14,8 @@ namespace WDC_STACKER.API.Models.Stacker
         public string? PenNum { get; set; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ProductName { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? CamVersion { get; set; }
         public int RackNum { get; set; }
         public int LayerRowNum { get; set; }
         public int LayerColNum { get; set; }

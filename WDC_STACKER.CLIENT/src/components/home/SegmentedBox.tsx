@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { BoxView } from "../../types/stacker";
+import { formatBoxName } from "../../utils/nameTransformers";
 
 const SEGMENT_CAP = 10;
 const BLUE_DARK = "#0052cc";
@@ -81,7 +82,7 @@ export default function SegmentedBox({ box, maxItemPerBox }: SegmentedBoxProps) 
                     overflowWrap: "anywhere",
                 }}
             >
-                <span>{box.BoxNo}</span>
+                <span>{formatBoxName(box.BoxNo, box.RackNum)}</span>
                 <small>{itemCount}/{configuredCapacity}</small>
             </span>
         </span>

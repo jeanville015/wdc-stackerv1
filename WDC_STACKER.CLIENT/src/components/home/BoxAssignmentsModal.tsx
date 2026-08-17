@@ -3,8 +3,9 @@ import {
     disassociateHolderApi,
     getBoxAssignmentsApi,
 } from "../../api/stackerApi";
-import { useAuth } from "../../context/AuthContext";
+import { useAuth } from "../../context/useAuth";
 import type { BoxAssignment, BoxView } from "../../types/stacker";
+import { formatBoxName } from "../../utils/nameTransformers";
 
 interface Props {
     boxName: string;
@@ -18,26 +19,49 @@ export default function BoxAssignmentsModal({
     onBoxesChanged,
 }: Props) {
     const { user } = useAuth();
-    const hasToken = Boolean(user?.token);
     const [rows, setRows] = useState<BoxAssignment[]>([]);
-    const [loading, setLoading] = useState(hasToken);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const displayError = error || (!hasToken ? "Login token is missing." : "");
     const [confirmRow, setConfirmRow] = useState<BoxAssignment | null>(null);
     const [deleting, setDeleting] = useState(false);
+    const token = user?.token;
+    const authError = token ? "" : "Login token is missing.";
+    const displayError = authError || error;
+    const displayLoading = Boolean(token) && loading;
 
     useEffect(() => {
-        if (!user?.token) {
+        if (!token) {
             return;
         }
 
-        getBoxAssignmentsApi(boxName, user.token)
-            .then(setRows)
+        let isCancelled = false;
+
+        Promise.resolve()
+            .then(() => {
+                if (isCancelled) return undefined;
+
+                setLoading(true);
+                setError("");
+                return getBoxAssignmentsApi(boxName, token);
+            })
+            .then((assignments) => {
+                if (!isCancelled && assignments) {
+                    setRows(assignments);
+                }
+            })
             .catch((err: unknown) =>
                 setError(err instanceof Error ? err.message : "Load failed.")
             )
-            .finally(() => setLoading(false));
-    }, [boxName, user?.token]);
+            .finally(() => {
+                if (!isCancelled) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [boxName, token]);
 
     const disassociate = async () => {
         if (!confirmRow || !user?.token) return;
@@ -79,9 +103,9 @@ export default function BoxAssignmentsModal({
                 onMouseDown={(event) => event.stopPropagation()}
             >
                 <div className="modal-content">
-                    <div className="modal-header">
-                        <h5 className="modal-title">
-                            Box Assignments: {boxName}
+                    <div className="modal-header align-items-center">
+                        <h5 className="modal-title" style={{ flex: 1, textAlign: "center" }}>
+                            Black Box: {formatBoxName(boxName, 0)}
                         </h5>
                         <button
                             type="button"
@@ -96,7 +120,7 @@ export default function BoxAssignmentsModal({
                             <div className="alert alert-danger">{displayError}</div>
                         )}
 
-                        {loading ? (
+                        {displayLoading ? (
                             <div className="text-center p-4">
                                 <span className="spinner-border" />
                             </div>
@@ -106,6 +130,8 @@ export default function BoxAssignmentsModal({
                                     <thead className="table-light">
                                         <tr>
                                             <th>Holder</th>
+                                            <th>Job</th>
+                                            <th>Qty</th>
                                             <th>Product Name</th>
                                             <th>Factory</th>
                                             <th>LEC</th>
@@ -122,14 +148,31 @@ export default function BoxAssignmentsModal({
                                             return (
                                                 <tr key={row.Holder}>
                                                     <td>{row.Holder}</td>
+                                                    <td>{row.Job ?? ""}</td>
+                                                    <td>{row.Qty ?? ""}</td>
                                                     <td>{row.ProductName}</td>
                                                     <td>{row.Factory}</td>
                                                     <td>{row.Lec}</td>
                                                     <td>{row.Status}</td>
                                                     <td>
                                                         <button
-                                                            className="btn btn-sm btn-danger"
+                                                            className={`btn btn-sm ${
+                                                                canDisassociate
+                                                                    ? "btn-danger"
+                                                                    : "btn-secondary"
+                                                            }`}
                                                             disabled={!canDisassociate}
+                                                            style={
+                                                                !canDisassociate
+                                                                    ? {
+                                                                          backgroundColor: "#adb5bd",
+                                                                          borderColor: "#adb5bd",
+                                                                          color: "#f1f1f1",
+                                                                          opacity: 1,
+                                                                          cursor: "not-allowed",
+                                                                      }
+                                                                    : undefined
+                                                            }
                                                             onClick={() =>
                                                                 setConfirmRow(row)
                                                             }
@@ -144,7 +187,7 @@ export default function BoxAssignmentsModal({
                                         {rows.length === 0 && (
                                             <tr>
                                                 <td
-                                                    colSpan={6}
+                                                    colSpan={8}
                                                     className="text-center text-muted p-4"
                                                 >
                                                     No assignments found.

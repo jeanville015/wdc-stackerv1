@@ -12,6 +12,8 @@ type RackBoardConfig = Pick<
 interface RackBoardProps {
     config: RackBoardConfig;
     boxes?: BoxView[];
+    selectedTargetBox?: BoxView | null;
+    isExistingHolderLocation?: boolean;
     onBoxesChanged: (boxes: BoxView[]) => void;
     recentlyAssignedBoxNo?: string | null;
 }
@@ -26,7 +28,7 @@ const emptyStateStyle: CSSProperties = {
     fontSize: "0.88rem",
 };
 
-export default function RackBoard({ config, boxes = [], onBoxesChanged, recentlyAssignedBoxNo }: RackBoardProps) {
+export default function RackBoard({ config, boxes = [], selectedTargetBox, isExistingHolderLocation, onBoxesChanged, recentlyAssignedBoxNo }: RackBoardProps) {
     const rackCount = Math.max(0, config.RACK_COUNT);
     const layerCount = Math.max(0, config.LAYER_COUNT);
     const boxCount = Math.max(0, config.BOX_COUNT);
@@ -34,18 +36,16 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
     const rackRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
     const suggestedTarget = useMemo(
-        () => boxes.find((box) => box.IsSuggestedTarget),
-        [boxes]
+        () => selectedTargetBox,
+        [selectedTargetBox]
     );
-    const suggestedTargetBoxNo = suggestedTarget?.BoxNo;
-    const suggestedTargetRackNum = suggestedTarget?.RackNum;
 
     useEffect(() => {
-        if (suggestedTargetRackNum == null) {
+        if (!suggestedTarget) {
             return;
         }
 
-        const rackElement = rackRefs.current[suggestedTargetRackNum];
+        const rackElement = rackRefs.current[suggestedTarget.RackNum];
 
         if (!rackElement) {
             return;
@@ -58,7 +58,7 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
                 inline: "nearest",
             });
         });
-    }, [suggestedTargetBoxNo, suggestedTargetRackNum]);
+    }, [suggestedTarget?.BoxNo, suggestedTarget?.RackNum]);
 
     if (rackCount === 0) {
         return <div style={emptyStateStyle}>No racks configured.</div>;
@@ -84,6 +84,8 @@ export default function RackBoard({ config, boxes = [], onBoxesChanged, recently
                             boxCount={boxCount}
                             maxItemPerBox={maxItemPerBox}
                             boxes={rackBoxes}
+                            selectedTargetBox={selectedTargetBox}
+                            isExistingHolderLocation={isExistingHolderLocation}
                             onBoxesChanged={onBoxesChanged}
                         />
                     </div>

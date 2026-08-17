@@ -3,6 +3,8 @@
 public class BoxAssignment
 {
     public string Holder { get; set; } = string.Empty;
+    public string? Job { get; set; }
+    public int? Qty { get; set; }
     public string ProductName { get; set; } = string.Empty;
     public string Factory { get; set; } = string.Empty;
     public string Lec { get; set; } = string.Empty;
