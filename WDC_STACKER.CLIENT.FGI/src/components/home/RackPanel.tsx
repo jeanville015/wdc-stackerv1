@@ -139,6 +139,7 @@ function MiniShipBoxGrid({
     shipBoxBoxCount: number;
     selectedTargetShipBox: ShipBoxView | null;
 }) {
+    const shipBoxColumnCount = shipBoxBoxCount;
     const shipBoxes = box.ShipBoxes ?? [];
     const rowCount = shipBoxes.reduce(
         (maximum, shipBox) => Math.max(maximum, shipBox.LayerRowNum),
@@ -192,7 +193,7 @@ function MiniShipBoxGrid({
                         title={
                             shipBox
                                 ? [
-                                    formatShipBoxName(shipBox.ShipBoxName),
+                                    formatShipBoxName(shipBox.LayerRowNum, shipBox.LayerColNum, shipBoxColumnCount),
                                     isInSiteHold
                                         ? `In-site hold: ${(shipBox.InSiteHoldHolders ?? []).join(", ")}`
                                         : hasHeldHolder
@@ -345,12 +346,12 @@ export default function RackPanel({
                             <p className="rack-target-locator">
                                 <span>Next placement</span>
                                 <span aria-hidden="true">&middot;</span>
-                                <strong>{formatBoxName(selectedTargetBox.BoxNo, rackNumber)}</strong>
+                                <strong>{formatBoxName(selectedTargetBox.LayerRowNum, selectedTargetBox.LayerColNum, boxCount)}</strong>
                                 <i
                                     className="fa-solid fa-arrow-right"
                                     aria-hidden="true"
                                 />
-                                <strong>{formatShipBoxName(selectedTargetShipBox.ShipBoxName)}</strong>
+                                <strong>{formatShipBoxName(selectedTargetShipBox.LayerRowNum, selectedTargetShipBox.LayerColNum, shipBoxBoxCount)}</strong>
                             </p>
                         )}
                 </div>
@@ -468,8 +469,8 @@ export default function RackPanel({
                                             (!box
                                                 ? "Empty rack cell"
                                                 : hasShipBoxes
-                                                    ? `Open ShipBoxes for ${formatBoxName(box.BoxNo, rackNumber)}`
-                                                    : `${formatBoxName(box.BoxNo, rackNumber)} has no ShipBoxes`) +
+                                                    ? `Open ShipBoxes for ${formatBoxName(box.LayerRowNum, box.LayerColNum, boxCount)}`
+                                                    : `${formatBoxName(box.LayerRowNum, box.LayerColNum, boxCount)} has no ShipBoxes`) +
                                             (inSiteHoldCount > 0
                                                 ? `, ${inSiteHoldCount} ${inSiteHoldCount === 1 ? "holder" : "holders"} on in-site hold`
                                                 : hasAnyHeldHolder
@@ -486,7 +487,7 @@ export default function RackPanel({
                                             <>
                                                 <span className="rack-box-content rack-box-content--expanded-mini-grid">
                                                     <span className="rack-box-name">
-                                                        {formatBoxName(box.BoxNo, rackNumber)}
+                                                        {formatBoxName(box.LayerRowNum, box.LayerColNum, boxCount)}
                                                     </span>
 
                                                     <MiniShipBoxGrid
@@ -552,6 +553,7 @@ export default function RackPanel({
                     box={selectedBox}
                     layerCount={shipBoxLayerCount}
                     boxCount={shipBoxBoxCount}
+                    rackBoxColumnCount={boxCount}
                     maxItemPerShipBox={maxItemPerShipBox}
                     shipBoxSelectionEnabled={boxSelectionEnabled}
                     selectedTargetShipBox={selectedTargetShipBox}

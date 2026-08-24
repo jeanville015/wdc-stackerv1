@@ -7,6 +7,9 @@ import { formatShipBoxName } from "../../utils/nameTransformers";
 interface Props {
     boxName: string;
     shipBox: ShipBoxView;
+    shipBoxColumnCount?: number;
+    boxDisplayName?: string;
+    rackDisplayName?: string;
     productName?: string | null;
     partNum?: string | null;
     penNum?: string | null;
@@ -17,6 +20,9 @@ interface Props {
 export default function BoxAssignmentsModal({
     boxName,
     shipBox,
+    shipBoxColumnCount,
+    boxDisplayName,
+    rackDisplayName,
     productName,
     partNum,
     penNum,
@@ -100,8 +106,21 @@ export default function BoxAssignmentsModal({
                                     id="box-assignments-modal-title"
                                     className="modal-title"
                                 >
-                                    {formatShipBoxName(shipBoxName)}
+                                    {formatShipBoxName(shipBox.LayerRowNum, shipBox.LayerColNum, shipBoxColumnCount)}
                                 </h5>
+
+                                {(boxDisplayName || rackDisplayName) && (
+                                    <div className="shipbox-modal-subtitle">
+                                        <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                                        <span>{boxDisplayName}</span>
+                                        {rackDisplayName && (
+                                            <>
+                                                <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                                                <span>{rackDisplayName}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
 
                                 <div className="shipbox-modal-metadata">
                                     <span>

@@ -16,6 +16,7 @@
 - Test Case 3: Job Batching / Assignment
 - Test Case 4: Job Withdrawal
 - Test Case 5: Individual Holder Disassociation
+- Test Case 6: Job Unship
 - Appendix
 - Customer Survey
 
@@ -230,6 +231,62 @@ Identify who to take up which role / user category - user id to be used during t
 | 6 | Attempt to remove an item whose placement record no longer exists, or is no longer in a removable state (after the move-out step succeeded) | Removal is rejected with "The holder was not found or its status is not RELEASE." | Pending | Pending | Negative — status guard on removal |
 | 7 | Attempt removal while the warehouse database is temporarily unavailable | Removal fails with a clear error message; the rack view is not left in a broken or partial state | Pending | Pending | Negative — database failure |
 | 8 | Confirm what information is returned after a removal | The response confirms success/failure, the message shown to the user, and the updated list of boxes for the rack view | Pending | Pending | Contract check |
+
+---
+
+## Test Case 6
+
+**Test Name:** Job Unship
+**Feature:** An operator scans a Shipping Id (a ShipBox holder) to load its child holders, scans each child holder to verify it against the loaded list, then clicks Unship. The system re-scans for the authoritative list, then executes the FEATS transaction sequence: Unship + SuperMove/MoveIn (of the ShipBox itself), BreakupJob, and — for CAM3.4 only — SetHolderStatus('R') and TransferHolderJob to re-home each loaded "Holder-1" onto its base "Holder". CloseHolderJob('CLOSE') runs for both cam versions. The whole FEATS query fan-out (Query(HolderJob) by ParentHolder) is forked across every enabled cam version (3.4 and 7) so the correct endpoint is auto-detected.
+
+### 6.1 Scan Shipping Id
+
+| Step | Action | Expected Result | Actual Result | Pass/Fail | Remarks |
+|---|---|---|---|---|---|
+| 1 | Enter a valid Shipping Id that has child holders on CAM3.4 and click LOAD | Child holders are loaded and shown in the table (Holder, Part Num, Grade, Model, Qty); message reads "Loaded N child holder(s) for ShippingId '...'." | Pending | Pending | Happy path — CAM3.4 |
+| 2 | Enter a valid Shipping Id that has child holders on CAM7 and click LOAD | Same as #1; the fork correctly finds the match on CAM7 | Pending | Pending | Happy path — CAM7 |
+| 3 | Click LOAD with the Shipping Id field left blank | The LOAD button is disabled; no request is sent | Pending | Pending | Negative — client-side guard |
+| 4 | Click LOAD while not logged in | "Login token is missing. Please sign in again." is shown; no request is sent | Pending | Pending | Negative — client-side guard |
+| 5 | Load with an invalid/expired session | "Invalid or expired token." is shown | Pending | Pending | Negative — invalid session |
+| 6 | Enter a Shipping Id that does not exist on either enabled cam version | "No child holders were found for ShippingId '...'." is shown | Pending | Pending | Negative — not found |
+| 7 | Enter a Shipping Id where FEATS returns rows but every row has a blank Holder value | "No child holders were found for ShippingId '...'." is shown (same as #6, not a false success) | Pending | Pending | Negative — edge case, post-filter empty |
+| 8 | Load while the FEATS service itself is unavailable/erroring on all enabled cam versions | The underlying FEATS technical error message is shown (not the generic "not found" message) | Pending | Pending | Negative — FEATS outage |
+| 9 | Enter a Shipping Id that (incorrectly) has matching child holders on **both** CAM3.4 and CAM7 | CAM3.4 result wins deterministically; a warning is logged server-side; only the CAM3.4 child holders are shown | Pending | Pending | Negative — data inconsistency tie-break |
+| 10 | Change the Shipping Id field after a successful load | Previous scan result, verified holders, and any messages are cleared/reset | Pending | Pending | UI reset check |
+
+### 6.2 Holder Verification
+
+| Step | Action | Expected Result | Actual Result | Pass/Fail | Remarks |
+|---|---|---|---|---|---|
+| 11 | Scan each child holder shown in the loaded table, one at a time | Each scanned holder is marked "SCANNED" and highlighted; the progress indicator/counter increments (e.g., "2 out of 3 holders scanned.") | Pending | Pending | Happy path |
+| 12 | Scan a holder ID that is not part of the loaded child holders list | "Holder not found in the loaded list." is shown; progress does not change | Pending | Pending | Negative — holder not in list |
+| 13 | Scan the same (already-verified) holder again | No additional effect; it remains counted once | Pending | Pending | Edge case — duplicate scan |
+| 14 | Attempt to click UNSHIP before all loaded child holders have been scanned | The UNSHIP button stays disabled | Pending | Pending | Enablement guard |
+| 15 | Scan every loaded child holder successfully | All holders show "SCANNED"; the UNSHIP button becomes enabled | Pending | Pending | Enablement check |
+
+### 6.3 Execute Unship — CAM3.4
+
+| Step | Action | Expected Result | Actual Result | Pass/Fail | Remarks |
+|---|---|---|---|---|---|
+| 16 | Click UNSHIP with all holders verified for a Shipping Id resolved to CAM3.4 | Unship, SuperMove, MoveIn, BreakupJob, SetHolderStatus('R'), TransferHolderJob, and CloseHolderJob('CLOSE') all execute in sequence; success message reads "ShippingId '...' was unshipped and returned for re-assignment successfully."; the form resets | Pending | Pending | Happy path |
+| 17 | Click UNSHIP with an invalid/expired session | "Invalid or expired token." is shown | Pending | Pending | Negative — invalid session |
+| 18 | Trigger Unship with a blank Shipping Id (server-side) | "ShippingId is required." is shown | Pending | Pending | Negative — server-side guard |
+| 19 | Click UNSHIP, but the re-scan (performed right before transacting) no longer finds the child holders (e.g., removed by someone else in the meantime) | Unship stops and shows the re-scan's failure message (e.g., "No child holders were found for ShippingId '...'.") | Pending | Pending | Negative — concurrent modification |
+| 20 | The FEATS UnShip(ShippingId, 'SHPBOX') call fails | "FEATS Unship failed: {reason}" is shown; no further steps are attempted | Pending | Pending | Negative — step 3 failure |
+| 21 | UnShip succeeds but the temporary SuperMove to '735630 FGI' fails | "FEATS SuperMove failed: {reason}" is shown | Pending | Pending | Negative — step 3 failure |
+| 22 | UnShip + SuperMove succeed but MoveIn fails | "FEATS MoveIn failed: {reason}" is shown | Pending | Pending | Negative — step 3 failure |
+| 23 | Steps 3 succeed but BreakupJob(Holder=ShippingId, Holders=child holders) fails | "FEATS BreakupJob failed: {reason}" is shown | Pending | Pending | Negative — step 4 failure |
+| 24 | Steps 3–4 succeed but SetHolderStatus('R') fails for one of the "-1"-stripped base holders | "FEATS SetHolderStatus failed for holder '{baseHolder}': {reason}" is shown | Pending | Pending | Negative — step 5 failure (CAM3.4 only) |
+| 25 | Steps 3–5 succeed but TransferHolderJob fails for one loaded/base holder pair | "FEATS TransferHolderJob failed for holder '{loadedHolder}' -> '{baseHolder}': {reason}" is shown | Pending | Pending | Negative — step 6 failure (CAM3.4 only) |
+| 26 | Steps 3–6 succeed but the final CloseHolderJob(Holder=ShippingId, Reason='CLOSE') fails | "FEATS CloseHolderJob failed: {reason}" is shown | Pending | Pending | Negative — step 7 failure |
+
+### 6.4 Execute Unship — CAM7
+
+| Step | Action | Expected Result | Actual Result | Pass/Fail | Remarks |
+|---|---|---|---|---|---|
+| 27 | Click UNSHIP with all holders verified for a Shipping Id resolved to CAM7 | Unship, SuperMove, MoveIn, and BreakupJob execute against the CAM7 endpoint; SetHolderStatus and TransferHolderJob are **skipped entirely**; CloseHolderJob('CLOSE') still executes; success message is shown | Pending | Pending | Happy path — CAM7 (steps 5–6 bypassed) |
+| 28 | On CAM7, steps 3–4 (Unship/SuperMove/MoveIn/BreakupJob) succeed but CloseHolderJob fails | "FEATS CloseHolderJob failed: {reason}" is shown, same as the CAM3.4 case | Pending | Pending | Negative — step 7 failure on CAM7 |
+| 29 | Confirm no "-1" suffix stripping or base-holder derivation logic runs for a CAM7 Shipping Id | No SetHolderStatus/TransferHolderJob FEATS calls are made for CAM7; verified only via logs/network trace | Pending | Pending | Regression check for the CAM7 skip logic |
 
 ---
 

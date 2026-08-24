@@ -8,11 +8,17 @@ import { formatShipBoxName } from "../../utils/nameTransformers";
 
 interface Props {
     shipBox: FgiWithdrawalShipBox;
+    shipBoxColumnCount?: number;
+    boxDisplayName?: string;
+    rackDisplayName?: string;
     onClose: () => void;
 }
 
 export default function WithdrawalHoldersModal({
     shipBox,
+    shipBoxColumnCount,
+    boxDisplayName,
+    rackDisplayName,
     onClose,
 }: Props) {
     const handleBackdropMouseDown = (
@@ -56,8 +62,21 @@ export default function WithdrawalHoldersModal({
                                 id="withdrawal-holders-modal-title"
                                 className="modal-title"
                             >
-                                {formatShipBoxName(shipBox.ShipBoxName)}
+                                {formatShipBoxName(shipBox.LayerRowNum, shipBox.LayerColNum, shipBoxColumnCount)}
                             </h5>
+
+                            {(boxDisplayName || rackDisplayName) && (
+                                <div className="shipbox-modal-subtitle">
+                                    <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                                    <span>{boxDisplayName}</span>
+                                    {rackDisplayName && (
+                                        <>
+                                            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                                            <span>{rackDisplayName}</span>
+                                        </>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="shipbox-modal-metadata">
                                 <span>

@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { getShipBoxesApi } from "../../api/stackerApi";
 import { useAuth } from "../../context/useAuth";
 import type { BoxView, ShipBoxView } from "../../types/stacker";
-import { formatBoxName, formatShipBoxName } from "../../utils/nameTransformers";
+import { formatBoxName, formatRackName, formatShipBoxName } from "../../utils/nameTransformers";
 import BoxAssignmentsModal from "./BoxAssignmentsModal";
 import { getCornerHighlightStyle } from "./rackGridStyles";
 
@@ -10,6 +10,7 @@ interface Props {
     box: BoxView;
     layerCount: number;
     boxCount: number;
+    rackBoxColumnCount: number;
     maxItemPerShipBox: number;
     shipBoxSelectionEnabled: boolean;
     selectedTargetShipBox: ShipBoxView | null;
@@ -50,9 +51,11 @@ const getShipBoxCellClassName = (
 function ShipBoxSegments({
     shipBox,
     maxItems,
+    shipBoxColumnCount,
 }: {
     shipBox: ShipBoxView;
     maxItems: number;
+    shipBoxColumnCount: number;
 }) {
     const capacity = Math.max(1, Number(maxItems) || 1);
     const usesHolderMatrix = capacity <= HOLDER_MATRIX_CAP;
@@ -113,7 +116,7 @@ function ShipBoxSegments({
         >
             <span className="shipbox-cell-identity">
                 <strong className="shipbox-cell-name-pill">
-                    {formatShipBoxName(shipBox.ShipBoxName)}
+                    {formatShipBoxName(shipBox.LayerRowNum, shipBox.LayerColNum, shipBoxColumnCount)}
                 </strong>
 
                 <small className="shipbox-cell-count">
@@ -168,6 +171,7 @@ export default function ShipBoxGridModal({
     box,
     layerCount,
     boxCount,
+    rackBoxColumnCount,
     maxItemPerShipBox,
     shipBoxSelectionEnabled,
     selectedTargetShipBox,
@@ -247,8 +251,13 @@ export default function ShipBoxGridModal({
                             </span>
 
                             <h5 className="modal-title">
-                                {formatBoxName(box.BoxNo, box.RackNum)}
+                                {formatBoxName(box.LayerRowNum, box.LayerColNum, rackBoxColumnCount)}
                             </h5>
+
+                            <div className="shipbox-modal-subtitle">
+                                <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                                <span>{formatRackName(box.RackNum)}</span>
+                            </div>
 
                             <div className="shipbox-modal-metadata">
                                 <span>
@@ -331,7 +340,9 @@ export default function ShipBoxGridModal({
                                                             aria-label={
                                                                 shipBox
                                                                     ? `View holders in ${formatShipBoxName(
-                                                                        shipBox.ShipBoxName
+                                                                        shipBox.LayerRowNum,
+                                                                        shipBox.LayerColNum,
+                                                                        boxCount
                                                                     )}`
                                                                     : "Empty ShipBox position"
                                                             }
@@ -341,6 +352,7 @@ export default function ShipBoxGridModal({
                                                                     <ShipBoxSegments
                                                                         shipBox={shipBox}
                                                                         maxItems={maxItemPerShipBox}
+                                                                        shipBoxColumnCount={boxCount}
                                                                     />
 
                                                                     {isInSiteHoldShipBox(shipBox) && (
@@ -431,6 +443,9 @@ export default function ShipBoxGridModal({
                             <BoxAssignmentsModal
                                 boxName={box.BoxNo}
                                 shipBox={selectedShipBox}
+                                shipBoxColumnCount={boxCount}
+                                boxDisplayName={formatBoxName(box.LayerRowNum, box.LayerColNum, rackBoxColumnCount)}
+                                rackDisplayName={formatRackName(box.RackNum)}
                                 productName={box.ProductName}
                                 partNum={box.PartNum}
                                 penNum={box.PenNum}

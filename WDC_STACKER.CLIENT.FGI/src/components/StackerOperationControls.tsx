@@ -4,6 +4,7 @@ import { useAuth } from "../context/useAuth";
 import type { BoxView, ShipBoxView } from "../types/stacker";
 import { formatBoxName, formatRackName, formatShipBoxName, transformValidationMessage } from "../utils/nameTransformers";
 import { STACKER_PROCESS } from "../config/processConfig";
+import type { CapacityConfig } from "../types/models";
 
 interface StackerOperationControlsProps {
     onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
@@ -12,6 +13,8 @@ interface StackerOperationControlsProps {
     onSelectedTargetBoxChanged: (box: BoxView | null) => void;
     onSelectedTargetShipBoxChanged: (shipBox: ShipBoxView | null) => void;
     onAssignedBoxConfirmed?: (boxNo: string) => void;
+    boxCount: CapacityConfig["BOX_COUNT"];
+    shipBoxBoxCount: CapacityConfig["BOX_COUNT-SHIPBOX"];
 }
 
 interface FeedbackState {
@@ -89,6 +92,8 @@ export default function StackerOperationControls({
     onSelectedTargetBoxChanged,
     onSelectedTargetShipBoxChanged,
     onAssignedBoxConfirmed,
+    boxCount,
+    shipBoxBoxCount,
 }: StackerOperationControlsProps) { 
     const { user } = useAuth();
     const [scanValue, setScanValue] = useState("");
@@ -200,7 +205,9 @@ export default function StackerOperationControls({
         try {
             const result = await scanApi(holder, user.token);
             const boxes = result.GridViewBoxes ?? [];
-            onGridViewBoxesLoaded?.(boxes);
+            if (result.GridViewBoxes && result.GridViewBoxes.length > 0) {
+                onGridViewBoxesLoaded?.(result.GridViewBoxes);
+            }
             setScannedCamVersion(result.CamVersion);
 
             if (result.Success && result.CanAssign) {
@@ -221,11 +228,14 @@ export default function StackerOperationControls({
 
                 const targetRackName = formatRackName(suggestedTarget.box.RackNum);
                 const targetBoxName = formatBoxName(
-                    suggestedTarget.box.BoxNo,
-                    suggestedTarget.box.RackNum
+                    suggestedTarget.box.LayerRowNum,
+                    suggestedTarget.box.LayerColNum,
+                    boxCount
                 );
                 const targetShipBoxName = formatShipBoxName(
-                    suggestedTarget.shipBox.ShipBoxName
+                    suggestedTarget.shipBox.LayerRowNum,
+                    suggestedTarget.shipBox.LayerColNum,
+                    shipBoxBoxCount
                 );
 
                 setValidationFeedback({
@@ -244,7 +254,11 @@ export default function StackerOperationControls({
                 setActiveStage("scan");
                 setValidationFeedback({
                     title: "Validation failed",
-                    message: transformValidationMessage(result.Message || `Holder ${holder} could not be validated.`),
+                    message: transformValidationMessage(
+                        result.Message || `Holder ${holder} could not be validated.`,
+                        boxCount,
+                        shipBoxBoxCount
+                    ),
                     type: "error",
                 });
             }
@@ -285,8 +299,8 @@ export default function StackerOperationControls({
         }
 
         const assignedBoxNo = selectedTargetBox.BoxNo;
-        const displayShipBoxName = formatShipBoxName(selectedTargetShipBox.ShipBoxName);
-        const displayBoxName = formatBoxName(selectedTargetBox.BoxNo, selectedTargetBox.RackNum);
+        const displayShipBoxName = formatShipBoxName(selectedTargetShipBox.LayerRowNum, selectedTargetShipBox.LayerColNum, shipBoxBoxCount);
+        const displayBoxName = formatBoxName(selectedTargetBox.LayerRowNum, selectedTargetBox.LayerColNum, boxCount);
         const displayRackName = formatRackName(selectedTargetBox.RackNum);
 
         setAssignLoading(true);
@@ -311,14 +325,18 @@ export default function StackerOperationControls({
 
             if (!result.Success) {
                 showAssignmentFailure(
-                    transformValidationMessage(result.Message ||
-                        `Unable to assign holder. ${displayShipBoxName} is no longer available.`),
+                    transformValidationMessage(
+                        result.Message ||
+                        `Unable to assign holder. ${displayShipBoxName} is no longer available.`,
+                        boxCount,
+                        shipBoxBoxCount
+                    ),
                     "Validate again to refresh the target."
                 );
                 return;
             }
 
-            if (result.GridViewBoxes) {
+            if (result.GridViewBoxes && result.GridViewBoxes.length > 0) {
                 onGridViewBoxesLoaded?.(result.GridViewBoxes);
             }
 

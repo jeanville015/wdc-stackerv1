@@ -21,6 +21,34 @@ public class StackerSqlService
 
     private const int FgiWithdrawalQtyTolerance = 500;
 
+    // Single source of truth for which HOLDER_ASSIGN rows are eligible
+    // for an FGI withdrawal. GetFgiWithdrawalLayoutAsync (rack view) and
+    // GetFgiWithdrawalDisassociationPreviewAsync (FIFO selection) both
+    // interpolate this exact predicate so a holder can never be eligible
+    // for withdrawal per one query while being invisible in the other.
+    // NOTE: GRADE is intentionally NOT matched here - HOLDER_ASSIGN.GRADE
+    // is not a reliable key for FGI withdrawal eligibility.
+    private const string FgiWithdrawalHolderEligibilitySql = """
+        UPPER(LTRIM(RTRIM(ISNULL(HA.[PROCESS], '')))) = @PROCESS
+        AND (
+            NULLIF(LTRIM(RTRIM(HA.[LEC])), '') IS NULL
+            OR @LEC IS NULL
+            OR UPPER(LTRIM(RTRIM(HA.[LEC]))) = UPPER(LTRIM(RTRIM(@LEC)))
+        )
+        AND (
+            NULLIF(LTRIM(RTRIM(HA.[PENNUM])), '') IS NULL
+            OR @PENNUM IS NULL
+            OR UPPER(LTRIM(RTRIM(HA.[PENNUM]))) = UPPER(LTRIM(RTRIM(@PENNUM)))
+        )
+        AND (
+            NULLIF(LTRIM(RTRIM(HA.[PARTNUM])), '') IS NULL
+            OR @PARTNUM IS NULL
+            OR UPPER(LTRIM(RTRIM(HA.[PARTNUM]))) = UPPER(LTRIM(RTRIM(@PARTNUM)))
+        )
+        AND NULLIF(LTRIM(RTRIM(HA.[HOLDER])), '') IS NOT NULL
+        AND ISNULL(HA.[QTY], 0) > 0
+        """;
+
 
 
     public StackerSqlService(IConfiguration configuration, IEmailService emailService)
@@ -810,7 +838,7 @@ public class StackerSqlService
 
     {
 
-        const string sql = """
+        string sql = $"""
 
         DECLARE @RemainingQty int = @TOTAL - @ACTUALOUTPUT;
 
@@ -880,70 +908,7 @@ public class StackerSqlService
 
             FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
 
-            WHERE UPPER(
-
-                    LTRIM(
-
-                        RTRIM(
-
-                            ISNULL(HA.[PROCESS], '')
-
-                        )
-
-                    )
-
-                ) = 'FGI'
-
-                AND (
-
-                    NULLIF(LTRIM(RTRIM(HA.[LEC])), '') IS NULL
-
-                    OR @LEC IS NULL
-
-                    OR UPPER(LTRIM(RTRIM(HA.[LEC]))) = UPPER(LTRIM(RTRIM(@LEC)))
-
-                )
-
-                AND
-                (
-                    NULLIF(
-                        LTRIM(RTRIM(HA.[PENNUM])),
-                        ''
-                    ) IS NULL
-                    OR @PENNUM IS NULL
-                    OR UPPER(
-                        LTRIM(RTRIM(HA.[PENNUM]))
-                    ) =
-                    UPPER(
-                        LTRIM(RTRIM(@PENNUM))
-                    )
-                )
-
-                AND
-                (
-                    NULLIF(LTRIM(RTRIM(HA.[PARTNUM])), '') IS NULL
-                    OR @PARTNUM IS NULL
-                    OR UPPER(LTRIM(RTRIM(HA.[PARTNUM]))) =
-                        UPPER(LTRIM(RTRIM(@PARTNUM)))
-                )
-
-                -- GRADE filter is disabled for now.
-                -- Re-enable by uncommenting once confirmed:
-                -- AND
-                -- (
-                --     NULLIF(LTRIM(RTRIM(HA.[GRADE])), '') IS NULL
-                --     OR @GRADE IS NULL
-                --     OR UPPER(LTRIM(RTRIM(HA.[GRADE]))) =
-                --         UPPER(LTRIM(RTRIM(@GRADE)))
-                -- )
-
-                AND NULLIF(
-                    LTRIM(RTRIM(HA.[HOLDER])),
-                    ''
-
-                ) IS NOT NULL
-
-                AND ISNULL(HA.[QTY], 0) > 0
+            WHERE {FgiWithdrawalHolderEligibilitySql}
 
         ),
 
@@ -1142,6 +1107,16 @@ public class StackerSqlService
             new SqlCommand(sql, connection);
 
 
+
+        command.Parameters.Add(
+
+            "@PROCESS",
+
+            SqlDbType.VarChar,
+
+            10
+
+        ).Value = "FGI";
 
         command.Parameters.Add(
 
@@ -1363,7 +1338,7 @@ public class StackerSqlService
 
     {
 
-        const string sql = """
+        string sql = $"""
 
         SELECT
 
@@ -1399,7 +1374,9 @@ public class StackerSqlService
 
             HA.[Factory],
 
-            HA.[STATUS]
+            HA.[STATUS],
+
+            HA.[UPDATETS]
 
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] BD
 
@@ -1411,21 +1388,7 @@ public class StackerSqlService
 
          AND SBD.[SHIPBOXNAME] = HA.[SHIPBOXNAME]
 
-        WHERE UPPER(LTRIM(RTRIM(ISNULL(HA.[PROCESS], '')))) = @PROCESS
-
-          AND UPPER(LTRIM(RTRIM(ISNULL(HA.[PARTNUM], '')))) = UPPER(LTRIM(RTRIM(@PARTNUM)))
-
-          AND UPPER(LTRIM(RTRIM(ISNULL(HA.[GRADE], '')))) = UPPER(LTRIM(RTRIM(@GRADE)))
-
-          AND (
-              @LEC IS NULL
-              OR UPPER(LTRIM(RTRIM(ISNULL(HA.[LEC], '')))) = UPPER(LTRIM(RTRIM(@LEC)))
-          )
-
-          AND (
-              @PENNUM IS NULL
-              OR UPPER(LTRIM(RTRIM(ISNULL(HA.[PENNUM], '')))) = UPPER(LTRIM(RTRIM(@PENNUM)))
-          )
+        WHERE {FgiWithdrawalHolderEligibilitySql}
 
         ORDER BY
 
@@ -1502,7 +1465,9 @@ public class StackerSqlService
 
             string Factory,
 
-            string Status)>();
+            string Status,
+
+            DateTime? UpdateTs)>();
 
 
 
@@ -1548,7 +1513,9 @@ public class StackerSqlService
 
                 Convert.ToString(reader["Factory"])?.Trim() ?? "",
 
-                Convert.ToString(reader["STATUS"])?.Trim() ?? ""
+                Convert.ToString(reader["STATUS"])?.Trim() ?? "",
+
+                reader["UPDATETS"] is DBNull ? null : Convert.ToDateTime(reader["UPDATETS"])
 
             ));
 
@@ -1650,11 +1617,20 @@ public class StackerSqlService
 
                                     Factory = holderGroup.FirstOrDefault().Factory ?? string.Empty,
 
-                                    Status = holderGroup.FirstOrDefault().Status ?? string.Empty
+                                    Status = holderGroup.FirstOrDefault().Status ?? string.Empty,
+
+                                    UpdateTs = holderGroup.FirstOrDefault().UpdateTs
 
                                 })
 
-                                .OrderBy(holder => holder.Holder)
+                                // Oldest first, matching the FIFO order used to
+                                // select withdrawal candidates. Holders with no
+                                // UPDATETS sort first, same as the FIFO preview.
+                                .OrderBy(holder => holder.UpdateTs.HasValue ? 1 : 0)
+
+                                .ThenBy(holder => holder.UpdateTs)
+
+                                .ThenBy(holder => holder.Holder)
 
                                 .ToList()
 
@@ -2074,7 +2050,10 @@ public class StackerSqlService
 
         AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS
 
-        ORDER BY [HOLDER];
+        ORDER BY
+            CASE WHEN [UPDATETS] IS NULL THEN 1 ELSE 0 END,
+            [UPDATETS] ASC,
+            [HOLDER] ASC;
 
         """;
 
@@ -2170,7 +2149,10 @@ public class StackerSqlService
 
         AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS
 
-    ORDER BY [HOLDER];
+    ORDER BY
+        CASE WHEN [UPDATETS] IS NULL THEN 1 ELSE 0 END,
+        [UPDATETS] ASC,
+        [HOLDER] ASC;
 
     """;
 
@@ -3032,16 +3014,6 @@ public class StackerSqlService
 
         BEGIN
 
-            IF @SHIPBOXCREATED = 0
-
-                THROW 51004,
-
-                    'A holder with null LEC requires a newly created ShipBox.',
-
-                    1;
-
-
-
             IF EXISTS
 
             (
@@ -3550,7 +3522,29 @@ public class StackerSqlService
 
                 [SHIPBOXNAME] varchar(50) NULL,
 
-                [QTY] bigint NOT NULL
+                [QTY] bigint NOT NULL,
+
+                [PARTNUM] varchar(50) NULL,
+
+                [PENNUM] varchar(50) NULL,
+
+                [PRODUCTNAME] nchar(10) NULL,
+
+                [LEC] varchar(50) NULL,
+
+                [FACTORY] varchar(50) NULL,
+
+                [SRCPROCESS] varchar(10) NULL,
+
+                [GRADE] varchar(50) NULL,
+
+                [CAMVERSION] varchar(10) NULL,
+
+                [JOB] varchar(50) NULL,
+
+                [UPDATEBY] varchar(50) NULL,
+
+                [UPDATETS] datetime NULL
 
             );
 
@@ -3574,7 +3568,29 @@ public class StackerSqlService
 
                 DELETED.[SHIPBOXNAME],
 
-                CONVERT(bigint, ISNULL(DELETED.[QTY], 0))
+                CONVERT(bigint, ISNULL(DELETED.[QTY], 0)),
+
+                DELETED.[PARTNUM],
+
+                DELETED.[PENNUM],
+
+                DELETED.[PRODUCTNAME],
+
+                DELETED.[LEC],
+
+                DELETED.[Factory],
+
+                DELETED.[PROCESS],
+
+                DELETED.[GRADE],
+
+                DELETED.[CAMVERSION],
+
+                DELETED.[JOB],
+
+                DELETED.[UPDATEBY],
+
+                DELETED.[UPDATETS]
 
             INTO @DeletedAssignments
 
@@ -3586,7 +3602,29 @@ public class StackerSqlService
 
                 [SHIPBOXNAME],
 
-                [QTY]
+                [QTY],
+
+                [PARTNUM],
+
+                [PENNUM],
+
+                [PRODUCTNAME],
+
+                [LEC],
+
+                [FACTORY],
+
+                [SRCPROCESS],
+
+                [GRADE],
+
+                [CAMVERSION],
+
+                [JOB],
+
+                [UPDATEBY],
+
+                [UPDATETS]
 
             )
 
@@ -3604,31 +3642,20 @@ public class StackerSqlService
                             ISNULL(HA.[PROCESS], '')
                         )
                     )
-                ) = 'FGI'
+                ) = 'FGI';
 
                 /*
-                 * NOTE: LEC and PENNUM are deliberately NOT matched here.
-                 * They are optional identifiers on the withdrawal request
-                 * (a request may have no LEC/PENNUM while the assigned
-                 * Holder legitimately has one, or vice versa), so matching
-                 * on them can incorrectly reject a valid delete.
+                 * NOTE: LEC, PENNUM, PARTNUM, and GRADE are deliberately NOT
+                 * matched here. They are optional/derived identifiers on the
+                 * withdrawal request, while HOLDER is the authoritative,
+                 * unique key already validated client-side by the FIFO
+                 * preview (getFgiWithdrawalDisassociationPreviewApi) before a
+                 * Holder is ever offered for inclusion. Re-checking
+                 * PartNum/Grade here caused false-negative "Unmatched
+                 * holders" failures for legitimately-existing rows whose
+                 * PARTNUM/GRADE values didn't exactly mirror the request's
+                 * SLIDERPARTNUMBER/GRADE.
                  */
-
-                AND
-                (
-                    NULLIF(LTRIM(RTRIM(HA.[PARTNUM])), '') IS NULL
-                    OR @RequestPartNum IS NULL
-                    OR UPPER(LTRIM(RTRIM(HA.[PARTNUM]))) =
-                        UPPER(LTRIM(RTRIM(@RequestPartNum)))
-                )
-
-                AND
-                (
-                    NULLIF(LTRIM(RTRIM(HA.[GRADE])), '') IS NULL
-                    OR @RequestGrade IS NULL
-                    OR UPPER(LTRIM(RTRIM(HA.[GRADE]))) =
-                        UPPER(LTRIM(RTRIM(@RequestGrade)))
-                );
 
 
 
@@ -3677,6 +3704,50 @@ public class StackerSqlService
 
             END;
 
+
+
+            /*
+             * Log every deleted Holder into HOLDER_ASSIGNHIST for audit
+             * purposes, tagged as a Withdrawal-driven removal.
+             *
+             * A Holder can be re-inserted into HOLDER_ASSIGN and later
+             * disassociated/withdrawn again, so guard against duplicate
+             * HOLDER_ASSIGNHIST rows: update the existing row for that
+             * Holder instead of inserting a second one.
+             */
+            MERGE INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGNHIST] AS Target
+            USING @DeletedAssignments AS Source
+                ON Target.[HOLDER] = Source.[HOLDER]
+            WHEN MATCHED THEN
+                UPDATE SET
+                    [BOXNAME] = Source.[BOXNO],
+                    [SHIPBOXNAME] = Source.[SHIPBOXNAME],
+                    [QTY] = CONVERT(int, Source.[QTY]),
+                    [PARTNUM] = Source.[PARTNUM],
+                    [PENNUM] = Source.[PENNUM],
+                    [PRODUCTNAME] = Source.[PRODUCTNAME],
+                    [LEC] = Source.[LEC],
+                    [Factory] = Source.[FACTORY],
+                    [PROCESS] = Source.[SRCPROCESS],
+                    [GRADE] = Source.[GRADE],
+                    [CAMVERSION] = Source.[CAMVERSION],
+                    [JOB] = Source.[JOB],
+                    [UPDATEBY] = Source.[UPDATEBY],
+                    [UPDATETS] = Source.[UPDATETS],
+                    [STATUS] = 'WITHDRAWN'
+            WHEN NOT MATCHED THEN
+                INSERT
+                (
+                    [HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM],
+                    [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION],
+                    [JOB], [UPDATEBY], [UPDATETS], [STATUS]
+                )
+                VALUES
+                (
+                    Source.[HOLDER], Source.[BOXNO], Source.[SHIPBOXNAME], CONVERT(int, Source.[QTY]), Source.[PARTNUM], Source.[PENNUM],
+                    Source.[PRODUCTNAME], Source.[LEC], Source.[FACTORY], Source.[SRCPROCESS], Source.[GRADE], Source.[CAMVERSION],
+                    Source.[JOB], Source.[UPDATEBY], Source.[UPDATETS], 'WITHDRAWN'
+                );
 
 
             DECLARE @DeletedQtySum bigint =
@@ -4179,13 +4250,154 @@ public class StackerSqlService
 
         const string sql = """
 
-        DELETE
+        SET NOCOUNT ON;
+        SET XACT_ABORT ON;
 
-        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
+        DECLARE @DeletedAssignments TABLE
+        (
+            [HOLDER] varchar(50) NULL,
+            [BOXNO] varchar(50) NULL,
+            [SHIPBOXNAME] varchar(50) NULL,
+            [QTY] int NULL,
+            [PARTNUM] varchar(50) NULL,
+            [PENNUM] varchar(50) NULL,
+            [PRODUCTNAME] nchar(10) NULL,
+            [LEC] varchar(50) NULL,
+            [FACTORY] varchar(50) NULL,
+            [SRCPROCESS] varchar(10) NULL,
+            [GRADE] varchar(50) NULL,
+            [CAMVERSION] varchar(10) NULL,
+            [JOB] varchar(50) NULL,
+            [UPDATEBY] varchar(50) NULL,
+            [UPDATETS] datetime NULL
+        );
 
-        WHERE [HOLDER] = @HOLDER
+        DELETE HA
+        OUTPUT
+            DELETED.[HOLDER],
+            DELETED.[BOXNAME],
+            DELETED.[SHIPBOXNAME],
+            DELETED.[QTY],
+            DELETED.[PARTNUM],
+            DELETED.[PENNUM],
+            DELETED.[PRODUCTNAME],
+            DELETED.[LEC],
+            DELETED.[Factory],
+            DELETED.[PROCESS],
+            DELETED.[GRADE],
+            DELETED.[CAMVERSION],
+            DELETED.[JOB],
+            DELETED.[UPDATEBY],
+            DELETED.[UPDATETS]
+        INTO @DeletedAssignments
+        (
+            [HOLDER], [BOXNO], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM],
+            [PRODUCTNAME], [LEC], [FACTORY], [SRCPROCESS], [GRADE], [CAMVERSION],
+            [JOB], [UPDATEBY], [UPDATETS]
+        )
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
+        WHERE HA.[HOLDER] = @HOLDER
+          AND UPPER(LTRIM(RTRIM(ISNULL(HA.[PROCESS], '')))) = @PROCESS;
 
-          AND UPPER(LTRIM(RTRIM(ISNULL([PROCESS], '')))) = @PROCESS;
+        DECLARE @DeletedCount int = @@ROWCOUNT;
+
+        /*
+         * Log the deleted Holder into HOLDER_ASSIGNHIST for audit
+         * purposes, tagged as an individual FGI-hold disassociation
+         * (Holder released, moved out to RBF2).
+         *
+         * A Holder can be re-inserted into HOLDER_ASSIGN and later
+         * disassociated/withdrawn again, so guard against duplicate
+         * HOLDER_ASSIGNHIST rows: update the existing row for that
+         * Holder instead of inserting a second one.
+         */
+        MERGE INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGNHIST] AS Target
+        USING @DeletedAssignments AS Source
+            ON Target.[HOLDER] = Source.[HOLDER]
+        WHEN MATCHED THEN
+            UPDATE SET
+                [BOXNAME] = Source.[BOXNO],
+                [SHIPBOXNAME] = Source.[SHIPBOXNAME],
+                [QTY] = Source.[QTY],
+                [PARTNUM] = Source.[PARTNUM],
+                [PENNUM] = Source.[PENNUM],
+                [PRODUCTNAME] = Source.[PRODUCTNAME],
+                [LEC] = Source.[LEC],
+                [Factory] = Source.[FACTORY],
+                [PROCESS] = Source.[SRCPROCESS],
+                [GRADE] = Source.[GRADE],
+                [CAMVERSION] = Source.[CAMVERSION],
+                [JOB] = Source.[JOB],
+                [UPDATEBY] = Source.[UPDATEBY],
+                [UPDATETS] = Source.[UPDATETS],
+                [STATUS] = 'MOVED OUT TO RBF 2 OP'
+        WHEN NOT MATCHED THEN
+            INSERT
+            (
+                [HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM],
+                [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION],
+                [JOB], [UPDATEBY], [UPDATETS], [STATUS]
+            )
+            VALUES
+            (
+                Source.[HOLDER], Source.[BOXNO], Source.[SHIPBOXNAME], Source.[QTY], Source.[PARTNUM], Source.[PENNUM],
+                Source.[PRODUCTNAME], Source.[LEC], Source.[FACTORY], Source.[SRCPROCESS], Source.[GRADE], Source.[CAMVERSION],
+                Source.[JOB], Source.[UPDATEBY], Source.[UPDATETS], 'MOVED OUT TO RBF 2 OP'
+            );
+
+        /*
+         * Cascade: remove the ShipBox if it now has zero Holders,
+         * then remove the Box (blackbox) if it now has zero ShipBoxes.
+         * Mirrors Stage 2/3 of DisassociateFgiWithdrawalAsync.
+         */
+        DECLARE @DeletedShipBoxes TABLE
+        (
+            [BOXNO] varchar(50),
+            [SHIPBOXNAME] varchar(50)
+        );
+
+        DELETE ShipBox
+        OUTPUT
+            DELETED.[BOXNO],
+            DELETED.[SHIPBOXNAME]
+        INTO @DeletedShipBoxes ([BOXNO], [SHIPBOXNAME])
+        FROM [BOXMANAGEMENT].[BOX].[SHIPBOXDETAILS] ShipBox
+        INNER JOIN
+        (
+            SELECT DISTINCT [BOXNO], [SHIPBOXNAME]
+            FROM @DeletedAssignments
+            WHERE [BOXNO] IS NOT NULL
+                AND [SHIPBOXNAME] IS NOT NULL
+        ) Affected
+            ON Affected.[BOXNO] = ShipBox.[BOXNO]
+            AND Affected.[SHIPBOXNAME] = ShipBox.[SHIPBOXNAME]
+        WHERE NOT EXISTS
+        (
+            SELECT 1
+            FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] RemainingHolder
+                WITH (UPDLOCK, HOLDLOCK)
+            WHERE RemainingHolder.[BOXNAME] = ShipBox.[BOXNO]
+                AND RemainingHolder.[SHIPBOXNAME] = ShipBox.[SHIPBOXNAME]
+        );
+
+        DELETE Box
+        FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] Box
+        INNER JOIN
+        (
+            SELECT DISTINCT [BOXNO]
+            FROM @DeletedShipBoxes
+        ) Affected
+            ON Affected.[BOXNO] = Box.[BOXNO]
+        WHERE UPPER(LTRIM(RTRIM(ISNULL(Box.[CLIENTCODE], '')))) = 'FGI'
+            AND NOT EXISTS
+            (
+                SELECT 1
+                FROM [BOXMANAGEMENT].[BOX].[SHIPBOXDETAILS] RemainingShipBox
+                    WITH (UPDLOCK, HOLDLOCK)
+                WHERE RemainingShipBox.[BOXNO] = Box.[BOXNO]
+            );
+
+        SELECT @DeletedCount AS [DeletedCount];
 
         """;
 
@@ -4193,21 +4405,29 @@ public class StackerSqlService
 
         await using var connection = new SqlConnection(_connectionString);
 
-        await using var command = new SqlCommand(sql, connection);
-
-
-
-        command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder;
-
-        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
-
-
-
         await connection.OpenAsync();
 
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.Serializable);
 
+        try
+        {
+            await using var command = new SqlCommand(sql, connection, transaction);
 
-        return await command.ExecuteNonQueryAsync() == 1;
+            command.Parameters.Add("@HOLDER", SqlDbType.VarChar, 50).Value = holder;
+
+            command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
+
+            var deletedCount = Convert.ToInt32(await command.ExecuteScalarAsync());
+
+            await transaction.CommitAsync();
+
+            return deletedCount == 1;
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
 
     }
 
@@ -4279,9 +4499,7 @@ public class StackerSqlService
 
             HA.[PENNUM] AS PenNum,
 
-            HA.[LEC],
-
-            HA.[STATUS] AS Status
+            HA.[LEC]
 
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
 
@@ -4365,9 +4583,7 @@ public class StackerSqlService
 
                 PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
 
-                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? "",
-
-                Status = Convert.ToString(reader["Status"])?.Trim() ?? ""
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? ""
 
             });
 
@@ -4379,7 +4595,139 @@ public class StackerSqlService
 
     }
 
+    public async Task<List<CsvExportRow>> GetHoldersInsertedTodayForCsvAsync(string process)
+    {
+        const string sql = """
+        SELECT
+            HA.[HOLDER],
+            HA.[JOB] AS Job,
+            HA.[QTY] AS Qty,
+            HA.[GRADE] AS Grade,
+            HA.[BOXNAME] AS BlackBox,
+            HA.[SHIPBOXNAME] AS ShipBox,
+            HA.[UPDATETS] AS InsertedOn,
+            HA.[QTY] AS Quantity,
+            HA.[PRODUCTNAME] AS Model,
+            HA.[PARTNUM] AS PartNum,
+            HA.[PENNUM] AS PenNum,
+            HA.[LEC]
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
+        WHERE UPPER(LTRIM(RTRIM(ISNULL(HA.[PROCESS], '')))) = @PROCESS
+          AND CAST(HA.[UPDATETS] AS date) = CAST(GETDATE() AS date)
+        ORDER BY
+            HA.[PRODUCTNAME],
+            HA.[PARTNUM],
+            HA.[PENNUM],
+            HA.[LEC],
+            HA.[BOXNAME],
+            HA.[SHIPBOXNAME],
+            HA.[HOLDER];
+        """;
 
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
+
+        await connection.OpenAsync();
+
+        var results = new List<CsvExportRow>();
+        await using var reader = await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            results.Add(new CsvExportRow
+            {
+                Holder = Convert.ToString(reader["HOLDER"])?.Trim() ?? "",
+                Job = reader["Job"] is DBNull ? "" : Convert.ToString(reader["Job"])?.Trim() ?? "",
+                Qty = reader["Qty"] is DBNull ? 0 : Convert.ToInt32(reader["Qty"]),
+                Grade = Convert.ToString(reader["Grade"])?.Trim() ?? "",
+                BlackBox = Convert.ToString(reader["BlackBox"])?.Trim() ?? "",
+                ShipBox = Convert.ToString(reader["ShipBox"])?.Trim() ?? "",
+                InsertedOn = reader["InsertedOn"] is DBNull
+                    ? ""
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                Quantity = reader["Quantity"] is DBNull
+                    ? 0
+                    : Convert.ToInt32(reader["Quantity"]),
+                Model = Convert.ToString(reader["Model"])?.Trim() ?? "",
+                PartNum = Convert.ToString(reader["PartNum"])?.Trim() ?? "",
+                PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? ""
+            });
+        }
+
+        return results;
+    }
+
+    private async Task<List<CsvExportRow>> GetHolderAssignHistForCsvAsync(string process, string status)
+    {
+        const string sql = """
+        SELECT
+            HAH.[HOLDER],
+            HAH.[JOB] AS Job,
+            HAH.[QTY] AS Qty,
+            HAH.[GRADE] AS Grade,
+            HAH.[BOXNAME] AS BlackBox,
+            HAH.[SHIPBOXNAME] AS ShipBox,
+            HAH.[UPDATETS] AS InsertedOn,
+            HAH.[QTY] AS Quantity,
+            HAH.[PRODUCTNAME] AS Model,
+            HAH.[PARTNUM] AS PartNum,
+            HAH.[PENNUM] AS PenNum,
+            HAH.[LEC],
+            HAH.[STATUS] AS Status
+        FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGNHIST] HAH
+        WHERE UPPER(LTRIM(RTRIM(ISNULL(HAH.[PROCESS], '')))) = @PROCESS
+          AND UPPER(LTRIM(RTRIM(ISNULL(HAH.[STATUS], '')))) = @STATUS
+        ORDER BY
+            HAH.[UPDATETS] DESC,
+            HAH.[HOLDER];
+        """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await using var command = new SqlCommand(sql, connection);
+
+        command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = process.Trim().ToUpperInvariant();
+        command.Parameters.Add("@STATUS", SqlDbType.VarChar, 50).Value = status.Trim().ToUpperInvariant();
+
+        await connection.OpenAsync();
+
+        var results = new List<CsvExportRow>();
+        await using var reader = await command.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            results.Add(new CsvExportRow
+            {
+                Holder = Convert.ToString(reader["HOLDER"])?.Trim() ?? "",
+                Job = reader["Job"] is DBNull ? "" : Convert.ToString(reader["Job"])?.Trim() ?? "",
+                Qty = reader["Qty"] is DBNull ? 0 : Convert.ToInt32(reader["Qty"]),
+                Grade = Convert.ToString(reader["Grade"])?.Trim() ?? "",
+                BlackBox = Convert.ToString(reader["BlackBox"])?.Trim() ?? "",
+                ShipBox = Convert.ToString(reader["ShipBox"])?.Trim() ?? "",
+                InsertedOn = reader["InsertedOn"] is DBNull
+                    ? ""
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                Quantity = reader["Quantity"] is DBNull
+                    ? 0
+                    : Convert.ToInt32(reader["Quantity"]),
+                Model = Convert.ToString(reader["Model"])?.Trim() ?? "",
+                PartNum = Convert.ToString(reader["PartNum"])?.Trim() ?? "",
+                PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? "",
+                Status = Convert.ToString(reader["Status"])?.Trim() ?? ""
+            });
+        }
+
+        return results;
+    }
+
+    public Task<List<CsvExportRow>> GetWithdrawnHoldersForCsvAsync(string process)
+        => GetHolderAssignHistForCsvAsync(process, "WITHDRAWN");
+
+    public Task<List<CsvExportRow>> GetMovedOutHoldersForCsvAsync(string process)
+        => GetHolderAssignHistForCsvAsync(process, "MOVED OUT TO RBF 2 OP");
 
 }
 

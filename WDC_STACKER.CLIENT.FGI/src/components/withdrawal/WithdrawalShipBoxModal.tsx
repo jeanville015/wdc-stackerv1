@@ -5,12 +5,15 @@ import type {
 } from "../../types/withdrawal";
 import {
     formatBoxName,
+    formatRackName,
     formatShipBoxName,
 } from "../../utils/nameTransformers";
 import WithdrawalHoldersModal from "./WithdrawalHoldersModal";
 
 interface Props {
     box: FgiWithdrawalBox;
+    rackNumber: number;
+    rackBoxColumnCount: number;
     layerCount: number;
     columnCount: number;
     maxItemPerShipBox?: number;
@@ -44,9 +47,11 @@ const getWithdrawalShipBoxCellClassName = (
 function WithdrawalShipBoxSegments({
     shipBox,
     maxItems,
+    shipBoxColumnCount,
 }: {
     shipBox: FgiWithdrawalShipBox;
     maxItems?: number;
+    shipBoxColumnCount: number;
 }) {
     const capacity = Math.max(1, Number(maxItems) || 1);
     const usesHolderMatrix = capacity <= HOLDER_MATRIX_CAP;
@@ -96,7 +101,7 @@ function WithdrawalShipBoxSegments({
         <span className="shipbox-cell-content" aria-hidden="true">
             <span className="shipbox-cell-identity">
                 <strong className="shipbox-cell-name-pill">
-                    {formatShipBoxName(shipBox.ShipBoxName)}
+                    {formatShipBoxName(shipBox.LayerRowNum, shipBox.LayerColNum, shipBoxColumnCount)}
                 </strong>
 
                 <small className="shipbox-cell-count">
@@ -141,6 +146,8 @@ function WithdrawalShipBoxSegments({
 
 export default function WithdrawalShipBoxModal({
     box,
+    rackNumber,
+    rackBoxColumnCount,
     layerCount,
     columnCount,
     maxItemPerShipBox,
@@ -196,8 +203,13 @@ export default function WithdrawalShipBoxModal({
                                 id="withdrawal-shipbox-modal-title"
                                 className="modal-title"
                             >
-                                {formatBoxName(box.BoxNo, box.LayerColNum)}
+                                {formatBoxName(box.LayerRowNum, box.LayerColNum, rackBoxColumnCount)}
                             </h5>
+
+                            <div className="shipbox-modal-subtitle">
+                                <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                                <span>{formatRackName(rackNumber)}</span>
+                            </div>
 
                             <div className="shipbox-modal-metadata">
                                 <span>
@@ -288,7 +300,9 @@ export default function WithdrawalShipBoxModal({
                                                             setSelectedShipBox(shipBox)
                                                         }
                                                         aria-label={`Open holders for ${formatShipBoxName(
-                                                            shipBox.ShipBoxName
+                                                            shipBox.LayerRowNum,
+                                                            shipBox.LayerColNum,
+                                                            columnCount
                                                         )}${hasInSiteHold
                                                                 ? ", in-site hold"
                                                                 : ""
@@ -297,6 +311,7 @@ export default function WithdrawalShipBoxModal({
                                                         <WithdrawalShipBoxSegments
                                                             shipBox={shipBox}
                                                             maxItems={maxItemPerShipBox}
+                                                            shipBoxColumnCount={columnCount}
                                                         />
 
                                                         {hasInSiteHold && (
@@ -363,6 +378,9 @@ export default function WithdrawalShipBoxModal({
             {selectedShipBox && (
                 <WithdrawalHoldersModal
                     shipBox={selectedShipBox}
+                    shipBoxColumnCount={columnCount}
+                    boxDisplayName={formatBoxName(box.LayerRowNum, box.LayerColNum, rackBoxColumnCount)}
+                    rackDisplayName={formatRackName(rackNumber)}
                     onClose={() =>
                         setSelectedShipBox(null)
                     }

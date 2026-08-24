@@ -91,6 +91,7 @@ public sealed class FgiWithdrawalHolderView
     public string ProductName { get; set; } = string.Empty;
     public string Factory { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public DateTime? UpdateTs { get; set; }
 
     // Populated by StackerAggregate.GetFgiWithdrawalLayoutAsync when a valid
     // session token is available (FEATS-backed live check, same cache as the

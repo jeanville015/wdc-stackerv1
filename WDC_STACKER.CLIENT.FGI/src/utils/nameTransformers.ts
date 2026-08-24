@@ -14,66 +14,98 @@ export const formatRackName = (rackNumber: number): string => {
 };
 
 /**
- * Transform box name for display.
- * Input: "R01L01C01" (BoxNo from API)
- * Output: "B01", "B02", etc. (simplified format)
- * 
- * For now, this extracts the rack number and converts to B format.
- * The sequential numbering per rack can be refined later based on business requirements.
+ * Compute a globally sequential number from a layer/column position,
+ * given how many items exist per layer. This keeps numbering unique
+ * and adaptive across layers, e.g. with itemsPerLayer = 3:
+ *   Layer 1 -> columns 1..3 => 1, 2, 3
+ *   Layer 2 -> columns 1..3 => 4, 5, 6
+ *   Layer 3 -> columns 1..3 => 7, 8, 9
  */
-export const formatBoxName = (boxNo: string, rackNumber: number): string => {
-  // Extract the box's column number (its position within the rack/layer)
-  const match = boxNo.match(/R\d+L\d+C(\d+)/);
-  if (match) {
-    const columnNum = parseInt(match[1], 10);
-    return `B${String(columnNum).padStart(2, '0')}`;
-  }
+const toSequentialNumber = (
+  layerNum: number,
+  columnNum: number,
+  itemsPerLayer: number
+): number => {
+  const perLayer = Math.max(1, itemsPerLayer);
+  return (Math.max(1, layerNum) - 1) * perLayer + columnNum;
+};
 
-  // Fallback: use the provided rack number
-  return `B${String(rackNumber).padStart(2, '0')}`;
+/**
+ * Transform box name for display.
+ * Input: the Box's LayerRowNum/LayerColNum (structured position fields from
+ * the API), boxCountPerLayer (config BOX_COUNT)
+ * Output: "B01", "B02", etc. (simplified, sequential across layers)
+ *
+ * The column number alone repeats every layer (C01, C02, ...), so it is
+ * combined with the layer number and the configured box-count-per-layer
+ * to produce a globally unique, sequential display number.
+ *
+ * NOTE: This intentionally uses the structured LayerRowNum/LayerColNum
+ * fields rather than parsing them out of the BoxNo string, since the
+ * persisted/display name string can drift from the object's actual
+ * current position (e.g. a reused BoxNo/ShipBoxName that was not
+ * regenerated after a move).
+ */
+export const formatBoxName = (
+  layerRowNum: number,
+  layerColNum: number,
+  boxCountPerLayer = 1
+): string => {
+  const sequential = toSequentialNumber(layerRowNum, layerColNum, boxCountPerLayer);
+  return `B${String(sequential).padStart(2, '0')}`;
 };
 
 /**
  * Transform shipbox name for display.
- * Input: "SB01L01C01" or "S01L01C01" (ShipBoxName from API)
- * Output: "S01", "S02", etc. (simplified format)
+ * Input: the ShipBox's LayerRowNum/LayerColNum (structured position fields
+ * from the API), shipBoxCountPerLayer (config BOX_COUNT-SHIPBOX)
+ * Output: "S01", "S02", etc. (simplified, sequential across layers)
+ *
+ * See formatBoxName's note above on why this uses structured fields
+ * instead of parsing the ShipBoxName string.
  */
-export const formatShipBoxName = (shipBoxName: string): string => {
-  // Extract the shipbox's column number (its position within the box/layer)
-  const match = shipBoxName.match(/(?:SB)?\d+L\d+C(\d+)/);
-  if (match) {
-    return `S${String(parseInt(match[1], 10)).padStart(2, '0')}`;
-  }
-  
-  // Fallback: return original name if pattern doesn't match
-  return shipBoxName;
+export const formatShipBoxName = (
+  layerRowNum: number,
+  layerColNum: number,
+  shipBoxCountPerLayer = 1
+): string => {
+  const sequential = toSequentialNumber(layerRowNum, layerColNum, shipBoxCountPerLayer);
+  return `S${String(sequential).padStart(2, '0')}`;
 };
 
 /**
  * Transform API validation messages to use simplified naming.
  * Replaces old naming patterns in error messages with new format.
  */
-export const transformValidationMessage = (message: string): string => {
+export const transformValidationMessage = (
+  message: string,
+  boxCountPerLayer = 1,
+  shipBoxCountPerLayer = 1
+): string => {
   if (!message) return message;
   
   let transformed = message;
   
 
   transformed = transformed.replace(
-    /Box R(\d+)L\d+C(\d+) \(Rack \d+, Layer \d+, Column \d+\), ShipBox S\d+L\d+C(\d+)/g,
-    (_match, rackNum, boxColNum, shipBoxColNum) => {
-      return `<br/>RACK: R${String(parseInt(rackNum, 10)).padStart(2, '0')},<br/>BLACKBOX: B${String(parseInt(boxColNum, 10)).padStart(2, '0')},<br/>SHIPBOX: S${String(parseInt(shipBoxColNum, 10)).padStart(2, '0')}`;
+    /Box R(\d+)L(\d+)C(\d+) \(Rack \d+, Layer \d+, Column \d+\), ShipBox S\d+L(\d+)C(\d+)/g,
+    (_match, rackNum, boxLayer, boxCol, shipBoxLayer, shipBoxCol) => {
+      const boxSeq = toSequentialNumber(parseInt(boxLayer, 10), parseInt(boxCol, 10), boxCountPerLayer);
+      const shipBoxSeq = toSequentialNumber(parseInt(shipBoxLayer, 10), parseInt(shipBoxCol, 10), shipBoxCountPerLayer);
+      return `<br/>RACK: R${String(parseInt(rackNum, 10)).padStart(2, '0')},<br/>BLACKBOX: B${String(boxSeq).padStart(2, '0')},<br/>SHIPBOX: S${String(shipBoxSeq).padStart(2, '0')}`;
     }
   );
   
-  // Transform box names: R01L01C04 -> B04 (column identifies the box)
-  transformed = transformed.replace(/R\d+L\d+C(\d+)/g, (_match, colNum) => {
-    return `B${String(parseInt(colNum, 10)).padStart(2, '0')}`;
+  // Transform box names: R01L01C04 -> B04 (layer + column identify the box)
+  transformed = transformed.replace(/R\d+L(\d+)C(\d+)/g, (_match, layerNum, colNum) => {
+    const sequential = toSequentialNumber(parseInt(layerNum, 10), parseInt(colNum, 10), boxCountPerLayer);
+    return `B${String(sequential).padStart(2, '0')}`;
   });
   
-  // Transform shipbox names: S01L01C02 -> S02 (column identifies the shipbox)
-  transformed = transformed.replace(/S\d+L\d+C(\d+)/g, (_match, colNum) => {
-    return `S${String(parseInt(colNum, 10)).padStart(2, '0')}`;
+  // Transform shipbox names: S01L01C02 -> S02 (layer + column identify the shipbox)
+  transformed = transformed.replace(/S\d+L(\d+)C(\d+)/g, (_match, layerNum, colNum) => {
+    const sequential = toSequentialNumber(parseInt(layerNum, 10), parseInt(colNum, 10), shipBoxCountPerLayer);
+    return `S${String(sequential).padStart(2, '0')}`;
   });
   
   // Transform "Rack 1, Layer 1, Column 4" -> simplified format

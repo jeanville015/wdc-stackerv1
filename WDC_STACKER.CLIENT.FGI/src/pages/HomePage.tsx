@@ -4,9 +4,13 @@ import StackerOperationControls from "../components/StackerOperationControls";
 
 import RackBoard from "../components/home/RackBoard";
 
+import HoldCheckResultModal from "../components/home/HoldCheckResultModal";
+
 import { useCapacityConfig } from "../hooks/useCapacityConfig";
 
 import JobWithdrawalPanel from "../components/withdrawal/JobWithdrawalPanel";
+
+import JobUnshipPanel from "../components/unship/JobUnshipPanel";
 
 import type { BoxView, ShipBoxView } from "../types/stacker";
 
@@ -14,7 +18,7 @@ import { Tab, Tabs } from "react-bootstrap";
 
 import { getBoxesApi, exportCsvApi } from "../api/stackerApi";
 
-import { runHoldCheck } from "../api/holdCheckApi";
+import { runHoldCheck, type HoldCheckResult, } from "../api/holdCheckApi";
 
 import { useAuth } from "../context/useAuth";
 
@@ -40,6 +44,10 @@ export default function HomePage() {
     const [refreshLoading, setRefreshLoading] = useState(false);
 
     const [holdCheckLoading, setHoldCheckLoading] = useState(false);
+
+    const [holdCheckResult, setHoldCheckResult] = useState<HoldCheckResult | null>(null);
+
+    const closeHoldCheckResult = useCallback(() => {  setHoldCheckResult(null); }, []);
 
     const [csvExportLoading, setCsvExportLoading] = useState(false);
 
@@ -122,41 +130,31 @@ export default function HomePage() {
 
 
     const handleHoldCheck = useCallback(async () => {
-
         setHoldCheckLoading(true);
+        setHoldCheckResult(null);
 
         try {
-
             const result = await runHoldCheck();
 
             if (result.success) {
-
-                alert(`Hold check completed successfully!\n\nTotal holders: ${result.data?.totalHolders}\nSet to HOLD: ${result.data?.holdersSetToHold}\nCleared: ${result.data?.holdersCleared}\nAlready on hold: ${result.data?.holdersAlreadyOnHold}\nAlready clear: ${result.data?.holdersAlreadyClear}`);
-
-                // Clear hold check loading state before refresh
-                setHoldCheckLoading(false);
-
-                // Refresh the rack after hold check
                 await handleRefresh();
-
-            } else {
-
-                alert(`Hold check failed: ${result.message}${result.error ? `\n\nError: ${result.error}` : ''}`);
-
             }
 
+            setHoldCheckResult(result);
         } catch (err) {
-
             console.error("Failed to run hold check:", err);
 
-            alert("Failed to run hold check. Please check the service connection.");
-
+            setHoldCheckResult({
+                success: false,
+                message: "Failed to run hold check.",
+                error:
+                    err instanceof Error
+                        ? err.message
+                        : "Please check the service connection.",
+            });
         } finally {
-
             setHoldCheckLoading(false);
-
         }
-
     }, [handleRefresh]);
 
     const handleExportCsv = async () => {
@@ -274,6 +272,10 @@ export default function HomePage() {
                         onSelectedTargetShipBoxChanged={setSelectedTargetShipBox}
 
                         onAssignedBoxConfirmed={showAssignedBoxConfirmation}
+
+                        boxCount={config?.BOX_COUNT ?? 1}
+
+                        shipBoxBoxCount={config?.["BOX_COUNT-SHIPBOX"] ?? 1}
 
                     />
 
@@ -730,7 +732,28 @@ export default function HomePage() {
 
                 </Tab>
 
+                <Tab
+
+                    eventKey="job-unship"
+
+                    title="JOB UNSHIP"
+
+                >
+
+                    <div className="fgi-tab-page-panel">
+
+                        <JobUnshipPanel />
+
+                    </div>
+
+                </Tab>
+
             </Tabs>
+
+            <HoldCheckResultModal
+                result={holdCheckResult}
+                onClose={closeHoldCheckResult}
+            />
 
         </div>
 

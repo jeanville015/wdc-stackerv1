@@ -8,26 +8,30 @@ namespace WDC_STACKER.API.Services
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<EmailService> _logger;
+        private readonly ActiveDirectoryService _activeDirectoryService;
 
-        public EmailService(IConfiguration configuration, ILogger<EmailService> logger)
+        public EmailService(IConfiguration configuration, ILogger<EmailService> logger, ActiveDirectoryService activeDirectoryService)
         {
             _configuration = configuration;
             _logger = logger;
+            _activeDirectoryService = activeDirectoryService;
         }
 
         public async Task<(bool Success, string ErrorMessage)> SendWithdrawalPartialEmailAsync(FgiWithdrawalRequestView request)
         {
             int offsetQty = (request.Total ?? 0) - (request.ActualOutput ?? 0);
-            string subject = $"Withdrawal Request Partially Fulfilled - Request #{request.RequestId} (Offset Qty: {offsetQty})";
-            string intro = $"<p>The withdrawal request has been partially fulfilled.</p>";
+            string subject = "Withdrawal Request Partially Fulfilled";
+            string requestorName = await _activeDirectoryService.GetDisplayNameAsync(request.Requestor);
+            string intro = $"<p>The Withdrawal Request by <strong>{requestorName}</strong> has been <strong>Partially Fulfilled</strong> at {DateTime.Now:yyyy-MM-dd HH:mm}.</p>";
 
             return await SendAsync(request, subject, intro, offsetQty);
         }
 
         public async Task<(bool Success, string ErrorMessage)> SendWithdrawalCompletedEmailAsync(FgiWithdrawalRequestView request)
         {
-            string subject = $"Withdrawal Request Completed - Request #{request.RequestId}";
-            string intro = $"<p>The withdrawal request has been completed.</p>";
+            string subject = "Withdrawal Request Completed";
+            string requestorName = await _activeDirectoryService.GetDisplayNameAsync(request.Requestor);
+            string intro = $"<p>The Withdrawal Request by <strong>{requestorName}</strong> has been <strong>Completed</strong> at {DateTime.Now:yyyy-MM-dd HH:mm}.</p>";
 
             return await SendAsync(request, subject, intro, null);
         }
@@ -35,10 +39,22 @@ namespace WDC_STACKER.API.Services
         public async Task<(bool Success, string ErrorMessage)> SendWithdrawalClosedEmailAsync(FgiWithdrawalRequestView request)
         {
             int offsetQty = (request.Total ?? 0) - (request.ActualOutput ?? 0);
-            string subject = $"Withdrawal Request Closed - Request #{request.RequestId} (Offset Qty: {offsetQty})";
-            string intro = $"<p>The withdrawal request has been closed automatically.</p>";
+            string subject = "Withdrawal Request Closed";
+            string requestorName = await _activeDirectoryService.GetDisplayNameAsync(request.Requestor);
+            string intro = $"<p>The Withdrawal Request by <strong>{requestorName}</strong> has been automatically <strong>Closed</strong> at {DateTime.Now:yyyy-MM-dd HH:mm}.</p>";
 
             return await SendAsync(request, subject, intro, offsetQty);
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Identifier line: Grade, PartNum, LEC (if present), PenNum (if present)
+        // ─────────────────────────────────────────────────────────────────────
+        private static string GetIdentifierLine(FgiWithdrawalRequestView request)
+        {
+            var idParts = new List<string> { $"Grade: {request.Grade}", $"PartNum: {request.SliderPartNumber}" };
+            if (!string.IsNullOrWhiteSpace(request.Lec)) idParts.Add($"LEC: {request.Lec}");
+            if (!string.IsNullOrWhiteSpace(request.PenNum)) idParts.Add($"PenNum: {request.PenNum}");
+            return string.Join(" | ", idParts);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -77,7 +93,7 @@ namespace WDC_STACKER.API.Services
                     $"<p>Please use the following link to view the request:<br/><a href='{appUrl}'>{appUrl}</a></p>";
 
                 // Build email body with header details and table
-                string body = BuildEmailBody(request, subject, introHtml, offsetQty, linkSection, footer, copyRight);
+                string body = await BuildEmailBody(request, subject, introHtml, offsetQty, linkSection, footer, copyRight);
 
                 MailMessage mailMsg = new MailMessage();
                 SmtpClient smtp = new SmtpClient();
@@ -111,7 +127,7 @@ namespace WDC_STACKER.API.Services
             }
         }
 
-        private string BuildEmailBody(
+        private async Task<string> BuildEmailBody(
             FgiWithdrawalRequestView request, 
             string subject, 
             string introHtml, 
@@ -120,96 +136,80 @@ namespace WDC_STACKER.API.Services
             string footer, 
             string copyRight)
         {
-            string offsetQtySection = offsetQty.HasValue ? 
-                $"<p><strong>Offset Qty:</strong> {offsetQty.Value}</p>" : "";
-
-            string lecSection = !string.IsNullOrEmpty(request.Lec) ? 
-                $"<td>{request.Lec}</td>" : "<td>-</td>";
-
-            string penNumSection = !string.IsNullOrEmpty(request.PenNum) ? 
-                $"<td>{request.PenNum}</td>" : "<td>-</td>";
+            string requestCard = await BuildRequestCard(request);
 
             return $@"
 <html>
 <body style='font-family: Arial, sans-serif;'>
     <h2>{subject}</h2>
     {introHtml}
-    
-    <h3>Request Details</h3>
-    <table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; width: 100%;'>
-        <tr style='background-color: #f2f2f2;'>
-            <th style='text-align: left;'>Request ID</th>
-            <th style='text-align: left;'>Grade</th>
-            <th style='text-align: left;'>Part Number</th>
-            <th style='text-align: left;'>Qty</th>
-            <th style='text-align: left;'>LEC</th>
-            <th style='text-align: left;'>Pen Num</th>
-        </tr>
-        <tr>
-            <td>{request.RequestId}</td>
-            <td>{request.Grade}</td>
-            <td>{request.SliderPartNumber}</td>
-            <td>{request.Total ?? 0}</td>
-            {lecSection}
-            {penNumSection}
-        </tr>
-    </table>
 
-    {offsetQtySection}
-
-    <h3>Additional Details</h3>
-    <table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; width: 100%;'>
-        <tr style='background-color: #f2f2f2;'>
-            <th style='text-align: left;'>Field</th>
-            <th style='text-align: left;'>Value</th>
-        </tr>
-        <tr>
-            <td>Date</td>
-            <td>{request.Date?.ToString("yyyy-MM-dd HH:mm") ?? "-"}</td>
-        </tr>
-        <tr>
-            <td>Requestor</td>
-            <td>{request.Requestor}</td>
-        </tr>
-        <tr>
-            <td>Shift</td>
-            <td>{request.Shift}</td>
-        </tr>
-        <tr>
-            <td>Model</td>
-            <td>{request.Model}</td>
-        </tr>
-        <tr>
-            <td>Category</td>
-            <td>{request.Category}</td>
-        </tr>
-        <tr>
-            <td>Head Type</td>
-            <td>{request.HeadType}</td>
-        </tr>
-        <tr>
-            <td>Actual Output</td>
-            <td>{request.ActualOutput ?? 0}</td>
-        </tr>
-        <tr>
-            <td>Status</td>
-            <td>{request.Status}</td>
-        </tr>
-        <tr>
-            <td>Acknowledge By</td>
-            <td>{request.AcknowledgeBy}</td>
-        </tr>
-        <tr>
-            <td>Remarks</td>
-            <td>{request.Remarks}</td>
-        </tr>
-    </table>
+    {requestCard}
 
     {linkSection}
     <p>{footer}</p>
     <p>{copyRight}</p>
 </body>
 </html>";
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Request card: mirrors FGI_Service layout
+        //   top-left: identifiers (subtitle: requestor + request date)
+        //   top-right: total, actual output, offset (color-coded)
+        //   bottom: model, category, head type, status, acknowledged by, remarks
+        // ─────────────────────────────────────────────────────────────────────
+        private async Task<string> BuildRequestCard(FgiWithdrawalRequestView request)
+        {
+            int total = request.Total ?? 0;
+            int actualOutput = request.ActualOutput ?? 0;
+            int offset = total - actualOutput;
+            var offsetColor = offset > 0 ? "#c0392b" : "#27ae60";
+            var offsetLabel = offset > 0 ? $"-{offset}" : offset < 0 ? $"+{Math.Abs(offset)}" : "0";
+
+            var idLine = GetIdentifierLine(request);
+            var requestorName = await _activeDirectoryService.GetDisplayNameAsync(request.Requestor);
+            var acknowledgeByName = string.IsNullOrWhiteSpace(request.AcknowledgeBy)
+                ? request.AcknowledgeBy
+                : await _activeDirectoryService.GetDisplayNameAsync(request.AcknowledgeBy);
+
+            return $@"
+        <div style='border: 1px solid #ddd; border-radius: 6px; padding: 14px; margin-bottom: 16px;'>
+            <table style='width: 100%; border-collapse: collapse;'>
+                <tr>
+                    <td style='vertical-align: top; text-align: left;'>
+                        <div style='font-size: 16px; font-weight: bold;'>{idLine}</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 4px;'>
+                            Requestor: {requestorName} &nbsp;|&nbsp; Request Date: {request.Date?.ToString("yyyy-MM-dd HH:mm") ?? "-"}
+                        </div>
+                    </td>
+                    <td style='vertical-align: top; text-align: right; white-space: nowrap;'>
+                        <span style='margin-right: 12px;'>Total: <b>{total}</b></span>
+                        <span style='margin-right: 12px;'>Actual Output: <b>{actualOutput}</b></span>
+                        <span style='color: {offsetColor}; font-weight: bold;'>Offset: {offsetLabel}</span>
+                    </td>
+                </tr>
+            </table>
+
+            <table border='1' cellpadding='5' cellspacing='0' style='border-collapse: collapse; width: 100%; margin-top: 10px;'>
+                <tr style='background-color: #f2f2f2;'>
+                    <th style='text-align: left;'>Model</th>
+                    <th style='text-align: left;'>Category</th>
+                    <th style='text-align: left;'>Head Type</th>
+                    <th style='text-align: left;'>Status</th>
+                    <th style='text-align: left;'>Acknowledged By</th>
+                    <th style='text-align: left;'>Remarks</th>
+                </tr>
+                <tr>
+                    <td>{request.Model}</td>
+                    <td>{request.Category}</td>
+                    <td>{request.HeadType}</td>
+                    <td>{request.Status}</td>
+                    <td>{acknowledgeByName}</td>
+                    <td>{request.Remarks}</td>
+                </tr>
+            </table>
+        </div>";
         }
     }
 }

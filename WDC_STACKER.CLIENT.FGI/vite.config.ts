@@ -20,6 +20,11 @@ export default defineConfig({
                 changeOrigin: true,
                 secure: false,
                 rewrite: (path) => path
+            },
+            '/FGI_Service': {
+                target: 'http://pbt-md-app03',
+                changeOrigin: true,
+                secure: false
             }
         }
     }

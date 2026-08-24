@@ -855,23 +855,146 @@ code {
     font-weight: 400 !important;
 }
 
-.withdrawal-verify-grid {
+.withdrawal-verification-stages {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 0.85rem;
+    gap: 0.75rem;
 }
 
-.withdrawal-verify-item {
-    border: 1px solid #7fa1e8;
-    border-radius: 5px;
+.withdrawal-verification-stage {
+    overflow: hidden;
+    border: 1px solid #cfd9eb;
+    border-radius: 6px;
+    background: #ffffff;
 }
 
-.withdrawal-verify-item > label {
-    margin: 0.7rem 0.7rem 0.7rem 0.7rem;
+.withdrawal-verification-stage.is-active {
+    border-color: #6b96ed;
 }
 
-.withdrawal-verify-control {
-    margin: 0 0.7rem 0.7rem 0.7rem;
+.withdrawal-verification-stage.is-complete {
+    border-color: #58ad75;
+    background: #f3fbf5;
+}
+
+.withdrawal-verification-stage.is-locked {
+    border-color: #d7deea;
+    background: #f5f7fa;
+    color: #8993a4;
+}
+
+.withdrawal-verification-stage-header {
+    display: flex;
+    min-height: 3.15rem;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.8rem;
+}
+
+.withdrawal-verification-stage-marker {
+    display: inline-flex;
+    width: 1.65rem;
+    height: 1.65rem;
+    flex: 0 0 1.65rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #0d6efd;
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.is-complete .withdrawal-verification-stage-marker {
+    background: #1f9146;
+}
+
+.is-locked .withdrawal-verification-stage-marker {
+    background: #a7b0bf;
+}
+
+.withdrawal-verification-stage-heading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    text-align: left;
+}
+
+.withdrawal-verification-stage-heading strong {
+    color: #102a69;
+    font-size: 0.8rem;
+    font-weight: 800;
+}
+
+.withdrawal-verification-stage-heading small {
+    color: #6b778c;
+    font-size: 0.69rem;
+    line-height: 1.35;
+}
+
+.is-complete .withdrawal-verification-stage-heading strong {
+    color: #147530;
+}
+
+.is-locked .withdrawal-verification-stage-heading strong,
+.is-locked .withdrawal-verification-stage-heading small {
+    color: #8993a4;
+}
+
+.withdrawal-verification-stage-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.withdrawal-verification-rescan {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    background: transparent;
+    color: #0052cc;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.withdrawal-verification-rescan:hover,
+.withdrawal-verification-rescan:focus-visible {
+    color: #003d99;
+    text-decoration: underline;
+}
+
+.withdrawal-verification-chevron {
+    flex: 0 0 auto;
+    color: #40527c;
+    font-size: 0.72rem;
+}
+
+.is-locked .withdrawal-verification-chevron {
+    color: #a7b0bf;
+}
+
+.withdrawal-verification-stage-body {
+    padding: 0.9rem;
+    border-top: 1px solid #d9e1ee;
+    background: #ffffff;
+}
+
+.withdrawal-verification-field,
+.withdrawal-verification-scan {
+    min-width: 0;
+    text-align: left;
+}
+
+.withdrawal-verification-field > label,
+.withdrawal-verification-scan > label {
+    display: block;
+    margin-bottom: 0.45rem;
+    color: #40527c;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
 }
 
 .withdrawal-verify-control {
@@ -880,57 +1003,103 @@ code {
     gap: 0.65rem;
 }
 
-.withdrawal-shipping-id-feedback {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    margin-top: 0.65rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1.25;
-    text-align: left;
+.withdrawal-scan-input-wrap {
+    position: relative;
+    min-width: 0;
 }
 
-    .withdrawal-shipping-id-feedback.is-success {
-        padding: 0.55rem 0.65rem;
-        border: 1px solid #58ad75;
-        border-radius: 5px;
-        background: #effaf2;
-        color: #147530;
-    }
+.withdrawal-scan-input-wrap .form-control {
+    width: 100%;
+    padding-right: 2.75rem;
+}
 
-        .withdrawal-shipping-id-feedback.is-success i {
-            flex: 0 0 auto;
-            font-size: 0.9rem;
-        }
+.withdrawal-scan-input-icon {
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    transform: translateY(-50%);
+    color: #102a69;
+    font-size: 1rem;
+    pointer-events: none;
+}
 
-    .withdrawal-shipping-id-feedback.is-error {
-        color: #dc3545;
-    }
+.withdrawal-scan-input-wrap
+.form-control:disabled
++ .withdrawal-scan-input-icon {
+    color: #a7b0bf;
+}
 
-.withdrawal-holder-progress {
+.withdrawal-verify-button {
+    min-width: 100px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.withdrawal-stage-message {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
-    margin: 0.65rem 0 0 0;
+    gap: 0.5rem;
+    margin-top: 0.65rem;
     padding: 0.55rem 0.65rem;
     border: 1px solid transparent;
     border-radius: 5px;
     font-size: 0.72rem;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.3;
     text-align: left;
 }
 
-    .withdrawal-holder-progress > i {
-        flex: 0 0 auto;
-        font-size: 0.9rem;
-    }
+.withdrawal-stage-message > i {
+    flex: 0 0 auto;
+    font-size: 0.9rem;
+}
+
+.withdrawal-stage-message.is-guidance {
+    border-color: #e0ad35;
+    background: #fff8df;
+    color: #795500;
+}
+
+.withdrawal-stage-message.is-error {
+    border-color: #e18888;
+    background: #fff0f0;
+    color: #b92525;
+}
+
+.withdrawal-stage-message.is-success {
+    border-color: #58ad75;
+    background: #effaf2;
+    color: #147530;
+}
+
+.withdrawal-holder-stage-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 1.25rem;
+    align-items: center;
+}
+
+.withdrawal-holder-progress-panel {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 1.25rem;
+    padding-left: 1.25rem;
+    border-left: 1px solid #d9e1ee;
+    text-align: left;
+}
+
+.withdrawal-holder-progress-ring-visual {
+    position: relative;
+    width: 8rem;
+    height: 8rem;
+    flex: 0 0 8rem;
+}
 
 .withdrawal-holder-progress-ring {
-    width: 1rem;
-    height: 1rem;
-    flex: 0 0 1rem;
+    width: 100%;
+    height: 100%;
     overflow: visible;
 }
 
@@ -941,13 +1110,75 @@ code {
 }
 
 .withdrawal-holder-progress-ring-track {
-    stroke: #efb4b4;
+    stroke: #dfe3e8;
 }
 
 .withdrawal-holder-progress-ring-value {
-    stroke: currentColor;
+    stroke: #0d6efd;
     stroke-linecap: round;
     transition: stroke-dashoffset 180ms ease;
+}
+
+.is-complete .withdrawal-holder-progress-ring-value {
+    stroke: #1f9146;
+}
+
+.withdrawal-holder-progress-ring-visual > strong {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #102a69;
+    font-size: 1.55rem;
+    font-weight: 800;
+}
+
+.withdrawal-holder-progress-details {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.withdrawal-holder-progress-details > strong {
+    color: #102a69;
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.withdrawal-holder-progress-details > span {
+    color: #6b778c;
+    font-size: 0.72rem;
+}
+
+.withdrawal-recently-verified {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.75rem;
+}
+
+.withdrawal-recently-verified > span {
+    color: #40527c;
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+}
+
+.withdrawal-recently-verified > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.75rem;
+    color: #147530;
+    font-size: 0.7rem;
+}
+
+.withdrawal-recently-verified time {
+    color: #40527c;
+    font-weight: 500;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -955,27 +1186,6 @@ code {
         transition: none;
     }
 }
-
-    .withdrawal-holder-progress.is-pending,
-    .withdrawal-holder-progress.is-not-found {
-        border-color: #e18888;
-        background: #fff0f0;
-        color: #b92525;
-    }
-
-    .withdrawal-holder-progress.is-complete {
-        border-color: #58ad75;
-        background: #effaf2;
-        color: #147530;
-    }
-
-.withdrawal-verify-button {
-    min-width: 92px;
-    font-size: 0.7rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-}
-
 .withdrawal-fifo-group +
 .withdrawal-fifo-group {
     margin-top: 0.9rem;
@@ -1238,6 +1448,19 @@ code {
     }
 }
 
+@media (max-width: 900px) {
+    .withdrawal-holder-stage-body {
+        grid-template-columns: 1fr;
+    }
+
+    .withdrawal-holder-progress-panel {
+        padding-top: 1rem;
+        padding-left: 0;
+        border-top: 1px solid #d9e1ee;
+        border-left: 0;
+    }
+}
+
 @media (max-width: 700px) {
     .withdrawal-disassociation-dialog {
         width: calc(100% - 0.5rem);
@@ -1248,13 +1471,34 @@ code {
         flex-direction: column;
     }
 
-    .withdrawal-disassociation-summary-secondary,
-    .withdrawal-verify-grid {
+    .withdrawal-disassociation-summary-secondary {
         grid-template-columns: 1fr;
+    }
+
+    .withdrawal-verification-stage-header {
+        align-items: flex-start;
+    }
+
+    .withdrawal-verification-stage-actions {
+        gap: 0.5rem;
     }
 
     .withdrawal-verify-control {
         grid-template-columns: 1fr;
+    }
+
+    .withdrawal-verify-button {
+        width: 100%;
+    }
+
+    .withdrawal-holder-progress-panel {
+        align-items: flex-start;
+    }
+
+    .withdrawal-holder-progress-ring-visual {
+        width: 6.5rem;
+        height: 6.5rem;
+        flex-basis: 6.5rem;
     }
 }
 
@@ -1761,6 +2005,17 @@ code {
     line-height: 1.1;
 }
 
+.shipbox-modal-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.25rem;
+    color: #7a869a;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
 .shipbox-modal-metadata {
     display: flex;
     flex-wrap: wrap;
@@ -1901,9 +2156,6 @@ code {
     font-size: 2rem;
 }
 
-.shipbox-empty-label {
-    /* Remove this entire rule. */
-}
 
 .shipbox-cell-content {
     display: flex;
@@ -2182,6 +2434,965 @@ tr.box-assignment-row--held > td {
         min-width: 5rem;
     }
 
+/* Check Hold result modal */
+.hold-check-result-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(9, 30, 66, 0.68);
+}
+
+.hold-check-result-modal {
+    text-align: left;
+    width: min(100%, 510px);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    border: 1px solid #d7dfeb;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 20px 55px rgba(9, 30, 66, 0.3);
+    color: #172b4d;
+}
+
+.hold-check-result-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+    padding: 1.25rem 1.35rem 1rem;
+    border-bottom: 1px solid #dbe3ef;
+}
+
+.hold-check-result-icon {
+    display: inline-flex;
+    flex: 0 0 2.65rem;
+    width: 2.65rem;
+    height: 2.65rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #24a957;
+    color: #ffffff;
+    font-size: 1.3rem;
+}
+
+.hold-check-result-modal.is-error .hold-check-result-icon {
+    background: #fff0f0;
+    color: #d23232;
+}
+
+.hold-check-result-heading {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+}
+
+    .hold-check-result-heading h2 {
+        margin: 0;
+        color: #172b4d;
+        font-size: 1.12rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
+    }
+
+    .hold-check-result-heading p {
+        margin: 0.35rem 0 0;
+        color: #42526e;
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+
+.hold-check-result-x {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    margin: -0.25rem -0.35rem 0 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #172b4d;
+    font-size: 1.15rem;
+}
+
+    .hold-check-result-x:hover,
+    .hold-check-result-x:focus-visible {
+        background: #edf2f9;
+        color: #0052cc;
+    }
+
+.hold-check-result-body {
+    padding: 0 1.35rem;
+}
+
+.hold-check-result-total {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.15rem 0 0.85rem;
+    text-align: center;
+}
+
+    .hold-check-result-total strong {
+        color: #091e42;
+        font-size: 3rem;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    .hold-check-result-total span {
+        margin-top: 0.55rem;
+        color: #42526e;
+        font-size: 0.86rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+
+.hold-check-result-summary {
+    border-top: 1px solid #dbe3ef;
+}
+
+.hold-check-result-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    align-items: center;
+    min-height: 2.7rem;
+    border-bottom: 1px solid #dbe3ef;
+    padding: 0 0.65rem;
+}
+
+    .hold-check-result-row > span {
+        text-align: left;
+        color: #172b4d;
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
+    }
+
+    .hold-check-result-row > strong {
+        text-align: right;
+        color: #172b4d;
+        font-size: 0.96rem;
+        font-weight: 800;
+    }
+
+        .hold-check-result-row > strong.is-positive {
+            color: #159447;
+        }
+
+.hold-check-result-error {
+    padding: 1.5rem 0.75rem;
+    text-align: left;
+}
+
+    .hold-check-result-error p {
+        margin: 0;
+        color: #42526e;
+        line-height: 1.5;
+    }
+
+    .hold-check-result-error small {
+        display: block;
+        margin-top: 0.75rem;
+        color: #c62828;
+        overflow-wrap: anywhere;
+    }
+
+.hold-check-result-footer {
+    display: flex;
+    justify-content: center;
+    padding: 1.15rem 1.35rem 1.3rem;
+}
+
+.hold-check-result-close {
+    min-width: 200px;
+    min-height: 44px;
+    border: 0;
+    border-radius: 6px;
+    background: #5f7ba8;
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+    .hold-check-result-close:hover,
+    .hold-check-result-close:focus-visible {
+        background: #4f6c99;
+    }
+
+@media (max-width: 600px) {
+    .hold-check-result-backdrop {
+        padding: 0.75rem;
+    }
+
+    .hold-check-result-header {
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
+
+    .hold-check-result-body {
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
+
+    .hold-check-result-close {
+        width: 100%;
+    }
+}
+
+
+/* Job UnShip sequential workflow */
+.job-unship-workflow {
+    width: 100%;
+    padding: 1rem;
+    border: 1px solid #cfd9eb;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.job-unship-steps {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.job-unship-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    min-width: 0;
+}
+
+.job-unship-step-marker {
+    position: relative;
+    display: flex;
+    justify-content: center;
+}
+
+    .job-unship-step-marker::after {
+        position: absolute;
+        top: 2.9rem;
+        bottom: calc(-0.9rem - 1px);
+        width: 2px;
+        background: #cfd7e6;
+        content: "";
+    }
+
+.job-unship-step:last-child
+.job-unship-step-marker::after {
+    display: none;
+}
+
+.job-unship-step-number {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin-top: 1rem;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    color: #ffffff;
+    background: #a8b0bd;
+    font-size: 0.82rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.job-unship-step.is-active
+.job-unship-step-number {
+    background: #0b5ed7;
+    border-color: #0b5ed7;
+}
+
+.job-unship-step.is-complete
+.job-unship-step-number {
+    background: #18853b;
+    border-color: #18853b;
+}
+
+.job-unship-step.is-complete
+.job-unship-step-marker::after {
+    background: #39a75c;
+}
+
+.job-unship-step.is-locked
+.job-unship-step-number {
+    color: #ffffff;
+    background: #b4bac4;
+    border-color: #b4bac4;
+}
+
+.job-unship-step-panel {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid #d3dcea;
+    border-radius: 7px;
+    background: #ffffff;
+}
+
+.job-unship-step-panel.withdrawal-verification-stage {
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.job-unship-step-panel.withdrawal-verification-stage.is-active {
+    border-color: #6b96ed;
+    background: #ffffff;
+}
+
+.job-unship-step-panel.withdrawal-verification-stage.is-complete {
+    border-color: #58ad75;
+    background: #f3fbf5;
+}
+
+.job-unship-step.is-locked
+.job-unship-step-panel.withdrawal-verification-stage.is-locked {
+    border-color: #d7deea;
+    background: #f5f7fa;
+}
+
+.job-unship-step-panel
+.withdrawal-verification-stage-header {
+    min-height: 70px;
+}
+
+.job-unship-holder-stage-content
+.job-unship-holder-table {
+    margin-top: 1rem;
+}
+
+.job-unship-step.is-locked
+.job-unship-step-panel {
+    border-color: #dce1e8;
+    background: #f7f8fa;
+}
+
+.job-unship-step-content {
+    padding: 1rem 1.2rem 1.15rem;
+    text-align: left;
+}
+.job-unship-step-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+    .job-unship-step-header > div {
+        min-width: 0;
+        flex: 1;
+        text-align: left;
+    }
+
+.job-unship-open-indicator {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    color: #0065ff;
+}
+
+    .job-unship-step-header h3,
+    .job-unship-locked-row h3 {
+        margin: 0;
+        color: #102a69;
+        font-size: 0.95rem;
+        font-weight: 800;
+    }
+
+    .job-unship-step-header p,
+    .job-unship-locked-row p {
+        margin: 0.3rem 0 0;
+        color: #40527c;
+        font-size: 0.76rem;
+        line-height: 1.4;
+    }
+
+.job-unship-step-toggle {
+    display: inline-flex;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    color: #0065ff;
+    background: transparent;
+}
+
+    .job-unship-step-toggle:hover {
+        background: #eef4ff;
+    }
+
+    .job-unship-step-toggle:focus-visible,
+    .job-unship-summary-button:focus-visible {
+        outline: 3px solid rgba(0, 101, 255, 0.25);
+        outline-offset: -3px;
+    }
+
+.job-unship-locked-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 82px;
+    padding: 1rem 1.2rem;
+    color: #8c95a3;
+}
+
+    .job-unship-locked-row h3,
+    .job-unship-locked-row p {
+        color: #8c95a3;
+    }
+
+.job-unship-locked-copy {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 0.75rem;
+    text-align: left;
+}
+
+.job-unship-lock-icon {
+    flex: 0 0 auto;
+    margin-top: 0.15rem;
+    color: #939ba7;
+    font-size: 1rem;
+}
+
+.job-unship-locked-chevron {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: #a2a9b4;
+    font-size: 1rem;
+}
+
+.job-unship-summary-button {
+    display: grid;
+    grid-template-columns: minmax(190px, 1.2fr) minmax(150px, 0.65fr) minmax(190px, 1fr) 24px;
+    gap: 1rem;
+    align-items: center;
+    width: 100%;
+    min-height: 70px;
+    padding: 0.85rem 1.2rem;
+    border: 0;
+    color: #102a69;
+    background: #ffffff;
+    font: inherit;
+    text-align: left;
+}
+
+    .job-unship-summary-button:hover {
+        background: #fbfcff;
+    }
+
+.job-unship-summary-title {
+    font-size: 0.95rem;
+    font-weight: 800;
+}
+
+.job-unship-summary-meta {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+    .job-unship-summary-meta small {
+        color: #40527c;
+        font-size: 0.68rem;
+    }
+
+    .job-unship-summary-meta strong {
+        overflow: hidden;
+        color: #102a69;
+        font-size: 0.76rem;
+        font-weight: 500;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+.job-unship-summary-chevron {
+    justify-self: end;
+    color: #40527c;
+}
+
+.job-unship-field-group {
+    width: 100%;
+    max-width: 760px;
+    text-align: left;
+}
+
+.job-unship-input-wrap {
+    position: relative;
+    min-width: 0;
+}
+
+    .job-unship-input-wrap .form-control {
+        width: 100%;
+        padding-right: 2.75rem;
+    }
+
+.job-unship-input-icon {
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    transform: translateY(-50%);
+    color: #102a69;
+    font-size: 1rem;
+    pointer-events: none;
+}
+
+.job-unship-field-label {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: #243d7a;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-align: left;
+}
+
+.job-unship-scan-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 760px;
+}
+
+    .job-unship-scan-row .form-control {
+        min-height: 44px;
+        border-color: #cfd9eb;
+    }
+
+        .job-unship-scan-row .form-control:focus {
+            border-color: #0065ff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 101, 255, 0.14);
+        }
+
+.job-unship-scan-button {
+    min-width: 96px;
+    min-height: 44px;
+    padding-inline: 1rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+}
+
+.job-unship-holder-table {
+    margin-top: 1rem;
+}
+
+    .job-unship-holder-table
+    .withdrawal-fifo-table {
+        min-width: 760px;
+    }
+
+.job-unship-ready-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid #8ac99c;
+    border-radius: 6px;
+    background: #f2fbf4;
+}
+
+.job-unship-ready-message {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #147530;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+    .job-unship-ready-message > i {
+        flex: 0 0 auto;
+        font-size: 1.35rem;
+    }
+
+.job-unship-submit {
+    min-width: 145px;
+    min-height: 44px;
+    color: #ffffff;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+}
+
+    .job-unship-submit:disabled {
+        color: #ffffff;
+        background: #9ca3af;
+        border-color: #9ca3af;
+    }
+
+.job-unship-result {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin: 0.9rem 0 0;
+    font-size: 0.78rem;
+}
+
+    .job-unship-result > i {
+        flex: 0 0 auto;
+        font-size: 1rem;
+    }
+
+/* Job UnShip final confirmation */
+.job-unship-confirmation-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(9, 30, 66, 0.74);
+}
+
+.job-unship-confirmation {
+    width: min(100%, 720px);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    border: 0;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 22px 60px rgba(9, 30, 66, 0.38);
+    color: #172b4d;
+    text-align: left;
+}
+
+.job-unship-confirmation-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1.5rem 1.75rem 1.15rem;
+}
+
+.job-unship-confirmation-heading {
+    min-width: 0;
+}
+
+.job-unship-confirmation-eyebrow {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: #6b778c;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.job-unship-confirmation-heading h2 {
+    margin: 0;
+    color: #172b4d;
+    font-size: 1.85rem;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.job-unship-confirmation-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 1rem;
+}
+
+.job-unship-confirmation-warning-icon {
+    display: inline-flex;
+    width: 46px;
+    height: 46px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #d23232;
+    color: #ffffff;
+    font-size: 1.25rem;
+}
+
+.job-unship-confirmation-close {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #5e6c84;
+    font-size: 1.35rem;
+}
+
+    .job-unship-confirmation-close:hover:not(:disabled) {
+        background: #f1f2f4;
+        color: #172b4d;
+    }
+
+    .job-unship-confirmation-close:focus-visible {
+        outline: 3px solid rgba(0, 101, 255, 0.25);
+        outline-offset: 1px;
+    }
+
+    .job-unship-confirmation-close:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+    }
+
+.job-unship-confirmation-body {
+    padding: 0 1.75rem 1.5rem;
+}
+
+.job-unship-confirmation-identity {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.15rem;
+    border: 1px solid #cfd9eb;
+    border-radius: 8px;
+    background: #f7f9fc;
+}
+
+.job-unship-confirmation-box-icon {
+    display: inline-flex;
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #eaf3ff;
+    color: #172b4d;
+    font-size: 1.35rem;
+}
+
+.job-unship-confirmation-identity-copy {
+    display: grid;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+    .job-unship-confirmation-identity-copy > strong {
+        overflow: hidden;
+        color: #172b4d;
+        font-size: 1.3rem;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+.job-unship-confirmation-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0;
+    color: #40527c;
+    font-size: 0.82rem;
+}
+
+    .job-unship-confirmation-meta > span + span {
+        margin-left: 0.8rem;
+        padding-left: 0.8rem;
+        border-left: 1px solid #b7c5da;
+    }
+
+.job-unship-confirmation-consequences {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.35rem;
+}
+
+    .job-unship-confirmation-consequences > div {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        align-items: center;
+        gap: 0.75rem;
+        color: #172b4d;
+        font-size: 0.9rem;
+    }
+
+    .job-unship-confirmation-consequences i {
+        color: #172b4d;
+        font-size: 1.05rem;
+        text-align: center;
+    }
+
+.job-unship-confirmation-warning {
+    margin: 1.25rem 0 0;
+    color: #c62828;
+    font-size: 0.9rem;
+    font-weight: 800;
+}
+
+.job-unship-confirmation-error {
+    margin: 1rem 0 0;
+    font-size: 0.78rem;
+}
+
+.job-unship-confirmation-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.75rem;
+    border-top: 1px solid #d9e1ee;
+    background: #ffffff;
+}
+
+    .job-unship-confirmation-footer .btn {
+        min-width: 150px;
+        min-height: 44px;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+    }
+
+@media (max-width: 600px) {
+    .job-unship-confirmation-backdrop {
+        padding: 0.5rem;
+    }
+
+    .job-unship-confirmation {
+        max-height: calc(100vh - 1rem);
+        border-radius: 8px;
+    }
+
+    .job-unship-confirmation-header,
+    .job-unship-confirmation-body,
+    .job-unship-confirmation-footer {
+        padding-right: 1rem;
+        padding-left: 1rem;
+    }
+
+    .job-unship-confirmation-heading h2 {
+        font-size: 1.4rem;
+    }
+
+    .job-unship-confirmation-header-actions {
+        gap: 0.5rem;
+    }
+
+    .job-unship-confirmation-warning-icon {
+        width: 38px;
+        height: 38px;
+        font-size: 1rem;
+    }
+
+    .job-unship-confirmation-identity {
+        align-items: flex-start;
+    }
+
+    .job-unship-confirmation-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+        .job-unship-confirmation-meta > span + span {
+            margin-left: 0;
+            padding-left: 0;
+            border-left: 0;
+        }
+
+    .job-unship-confirmation-footer {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+        .job-unship-confirmation-footer .btn {
+            width: 100%;
+        }
+}
+
+@media (max-width: 900px) {
+    .job-unship-summary-button {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 24px;
+    }
+
+    .job-unship-summary-title {
+        grid-column: 1 / 3;
+    }
+
+    .job-unship-summary-chevron {
+        grid-column: 3;
+        grid-row: 1 / 3;
+    }
+}
+
+@media (max-width: 700px) {
+    .job-unship-workflow {
+        padding: 0.65rem;
+    }
+
+    .job-unship-step {
+        grid-template-columns: 42px minmax(0, 1fr);
+    }
+
+    .job-unship-step-number {
+        width: 32px;
+        height: 32px;
+        font-size: 0.74rem;
+    }
+
+    .job-unship-step-marker::after {
+        top: 2.7rem;
+    }
+
+    .job-unship-step-content,
+    .job-unship-locked-row {
+        padding: 0.85rem;
+    }
+
+    .job-unship-summary-button {
+        grid-template-columns: minmax(0, 1fr) 24px;
+        padding: 0.85rem;
+    }
+
+    .job-unship-summary-title,
+    .job-unship-summary-meta {
+        grid-column: 1;
+    }
+
+    .job-unship-summary-chevron {
+        grid-column: 2;
+        grid-row: 1 / 4;
+    }
+
+    .job-unship-scan-row {
+        grid-template-columns: 1fr;
+    }
+
+    .job-unship-scan-button {
+        width: 100%;
+    }
+
+    .job-unship-ready-bar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .job-unship-submit {
+        width: 100%;
+    }
+}
+
 @media (max-width: 767.98px) {
     .shipbox-grid-dialog {
         width: calc(100% - 1rem);
@@ -2219,3 +3430,4 @@ tr.box-assignment-row--held > td {
         padding-left: 1rem;
     }
 }
+

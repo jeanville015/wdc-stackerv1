@@ -457,6 +457,82 @@ namespace WDC_STACKER.API.Controllers.Stacker
             return Ok(layout);
         }
 
+        #region Feats Unship
+
+        [HttpGet("unship/scan")]
+        public async Task<IActionResult> ScanUnshipShippingId([FromQuery] string? shippingId)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(
+                    new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrWhiteSpace(shippingId))
+            {
+                return BadRequest(
+                    new { message = "ShippingId is required." });
+            }
+
+            var result = await _aggregate.ScanUnshipShippingIdAsync(shippingId.Trim(), token);
+
+            if (!result.Success)
+            {
+                return Conflict(new { message = result.Message });
+            }
+
+            return Ok(result);
+        }
+
+        [HttpPost("unship/{shippingId}")]
+        public async Task<IActionResult> UnshipFgiJob(string shippingId)
+        {
+            var token = GetBearerToken(Request);
+
+            if (string.IsNullOrWhiteSpace(token) ||
+                !_aggregate.IsSessionTokenValid(token))
+            {
+                return Unauthorized(
+                    new { message = "Invalid or expired token." });
+            }
+
+            if (!string.Equals(
+                    GetClientKey(),
+                    "WDC_STACKER.CLIENT.FGI",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return Forbid();
+            }
+
+            if (string.IsNullOrWhiteSpace(shippingId))
+            {
+                return BadRequest(
+                    new { message = "ShippingId is required." });
+            }
+
+            var result = await _aggregate.UnshipFgiJobAsync(shippingId.Trim(), token);
+
+            if (!result.Success)
+            {
+                return Conflict(new { message = result.Message });
+            }
+
+            return Ok(result);
+        }
+
+        #endregion
+
         [HttpDelete("assignments")]
         public async Task<IActionResult> Disassociate( [FromBody] DisassociateHolderRequest request)
         {
@@ -531,9 +607,21 @@ namespace WDC_STACKER.API.Controllers.Stacker
             }
 
             var clientKey = GetClientKey();
-            var data = await _aggregate.GetAllHolderAssignmentsForCsvAsync(clientKey);
+            var allHolders = await _aggregate.GetAllHolderAssignmentsForCsvAsync(clientKey);
+            var insertedToday = await _aggregate.GetHoldersInsertedTodayForCsvAsync(clientKey);
+            var withdrawnHolders = await _aggregate.GetWithdrawnHoldersForCsvAsync(clientKey);
+            var movedOutHolders = await _aggregate.GetMovedOutHoldersForCsvAsync(clientKey);
 
-            var csv = GenerateCsv(data);
+            var csvBuilder = new System.Text.StringBuilder();
+            AppendCsvTable(csvBuilder, "All Holders", allHolders, includeStatus: false);
+            csvBuilder.AppendLine();
+            AppendCsvTable(csvBuilder, "Holders Inserted Today", insertedToday, includeStatus: false);
+            csvBuilder.AppendLine();
+            AppendCsvTable(csvBuilder, "Withdrawn Holders", withdrawnHolders, includeStatus: true);
+            csvBuilder.AppendLine();
+            AppendCsvTable(csvBuilder, "Moved Out Holders", movedOutHolders, includeStatus: true);
+
+            var csv = csvBuilder.ToString();
 
             // Add UTF-8 BOM for proper Excel encoding recognition
             var bom = System.Text.Encoding.UTF8.GetPreamble();
@@ -551,16 +639,20 @@ namespace WDC_STACKER.API.Controllers.Stacker
             return File(csvWithBom, "text/csv; charset=utf-8");
         }
 
-        private string GenerateCsv(List<WDC_STACKER.API.Models.Stacker.CsvExportRow> data)
+        private void AppendCsvTable(System.Text.StringBuilder csv, string title, List<WDC_STACKER.API.Models.Stacker.CsvExportRow> data, bool includeStatus)
         {
-            var headers = new[] { "Holder", "Job", "Qty", "Grade", "Position", "InsertedOn", "Quantity", "Model", "PartNum", "PenNum", "Lec", "Status" };
-            var csv = new System.Text.StringBuilder();
+            var headers = new List<string> { "Holder", "Job", "Qty", "Grade", "Position", "InsertedOn", "Quantity", "Model", "PartNum", "PenNum", "Lec" };
+            if (includeStatus)
+            {
+                headers.Add("Status");
+            }
 
+            csv.AppendLine(EscapeCsvField(title));
             csv.AppendLine(string.Join(",", headers));
 
             foreach (var row in data)
             {
-                var values = new[]
+                var values = new List<string>
                 {
                     EscapeCsvField(row.Holder),
                     EscapeCsvField(row.Job),
@@ -572,13 +664,14 @@ namespace WDC_STACKER.API.Controllers.Stacker
                     EscapeCsvField(row.Model),
                     EscapeCsvField(row.PartNum),
                     EscapeCsvField(row.PenNum),
-                    EscapeCsvField(row.Lec),
-                    EscapeCsvField(row.Status)
+                    EscapeCsvField(row.Lec)
                 };
+                if (includeStatus)
+                {
+                    values.Add(EscapeCsvField(row.Status));
+                }
                 csv.AppendLine(string.Join(",", values));
             }
-
-            return csv.ToString();
         }
 
         private static readonly Regex BlackBoxPositionPattern =

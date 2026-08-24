@@ -1,4 +1,4 @@
-const HOLDCHECK_API_URL = import.meta.env.VITE_HOLDCHECK_API_URL || 'http://localhost:5003';
+const HOLDCHECK_API_URL = import.meta.env.VITE_HOLDCHECK_API_URL || '/FGI_Service';
 
 export interface HoldCheckResult {
   success: boolean;

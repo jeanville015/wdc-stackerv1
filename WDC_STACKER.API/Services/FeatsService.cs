@@ -1,4 +1,5 @@
 ﻿using System.ServiceModel;
+using System.Text.RegularExpressions;
 using FeatsServiceReference;
 using WDC_STACKER.API.Models;
 using WDC_STACKER.API.Models.Feats;
@@ -31,6 +32,41 @@ namespace WDC_STACKER.API.Services
         {
             var configKey = CamVersion.ToConfigKey(camVersion);
             return _config.GetValue<bool?>($"SoapApi:FeatsEndpoints:{configKey}:Enabled") ?? false;
+        }
+
+        /// <summary>
+        /// FEATS/InSite SOAP faults often carry the full server-side
+        /// exception dump (type name, inner exception chain, and stack
+        /// trace) inside the exception's Message property, e.g.:
+        /// "InSite service returned an error. Move-in is required at
+        /// this operation. ---> LLSSPTxn.G5Exception at
+        /// LLSSPTxn.Transactions.Util.TranslateInSiteError(...) in
+        /// c:\...:line 276 at ...".
+        ///
+        /// This trims that down to just the human-readable reason
+        /// (everything before the " ---> " inner-exception marker or
+        /// the first "at Namespace.Type.Method(" stack frame) so raw
+        /// stack traces are never surfaced directly to the UI.
+        /// </summary>
+        private static readonly Regex StackTraceMarkerRegex = new(
+            @"\s*--->\s*|\s+at\s+[\w.]+\(",
+            RegexOptions.Compiled | RegexOptions.Singleline);
+
+        internal static string ExtractCleanErrorMessage(Exception ex)
+        {
+            var rawMessage = ex.Message?.Trim() ?? string.Empty;
+
+            if (rawMessage.Length == 0)
+                return ex.GetType().Name;
+
+            var match = StackTraceMarkerRegex.Match(rawMessage);
+            var cleanMessage = match.Success
+                ? rawMessage[..match.Index].Trim()
+                : rawMessage;
+
+            return cleanMessage.Length == 0
+                ? rawMessage
+                : cleanMessage;
         }
 
         private string ResolveBaseUrl(string camVersion)
@@ -98,7 +134,7 @@ namespace WDC_STACKER.API.Services
                 return new UserPrivilegesResponse
                 {
                     Success = false,
-                    Message = "FEATS service error: " + ex.Message
+                    Message = "FEATS service error: " + ExtractCleanErrorMessage(ex)
                 };
             }
         }
@@ -178,7 +214,7 @@ namespace WDC_STACKER.API.Services
                 return new FeatsQueryResponse
                 {
                     Success = false,
-                    Message = "FEATS query error: " + ex.Message,
+                    Message = "FEATS query error: " + ExtractCleanErrorMessage(ex),
                     QueryType = request.QueryType
                 };
             }
@@ -245,7 +281,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS MoveOut failed for holder={Holder}", holder);
-                return (false, $"FEATS MoveOut failed: {ex.Message}"
+                return (false, $"FEATS MoveOut failed: {ExtractCleanErrorMessage(ex)}"
                 );
             }
         }
@@ -280,7 +316,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS SuperMove failed for holder={Holder}", holder);
-                return (false, $"FEATS SuperMove failed: {ex.Message}");
+                return (false, $"FEATS SuperMove failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -314,7 +350,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS MoveIn failed for holder={Holder}", holder);
-                return (false, $"FEATS MoveIn failed: {ex.Message}");
+                return (false, $"FEATS MoveIn failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -348,7 +384,42 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS AddJob failed for holder={Holder}", holder);
-                return (false, $"FEATS AddJob failed: {ex.Message}");
+                return (false, $"FEATS AddJob failed: {ExtractCleanErrorMessage(ex)}");
+            }
+        }
+
+        /// <summary>
+        /// Groups <paramref name="newHolders"/> under <paramref name="holder"/>
+        /// (the entered Shipping Id) via the FEATS AddToShipment transaction.
+        /// ShipTicket is currently always sent as null.
+        /// </summary>
+        /// <param name="holder"></param>
+        /// <param name="holderType"></param>
+        /// <param name="shipTicket"></param>
+        /// <param name="newHolders"></param>
+        /// <param name="username"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public async Task<(bool Success, string Message)> AddToShipmentAsync(string holder, string holderType, string? shipTicket, FeatsServiceReference.child_holder_info[] newHolders, string username, string password, string camVersion)
+        {
+            _logger.LogInformation("FEATS AddToShipment -> holder={Holder}, holderType={HolderType}, newHolderCount={NewHolderCount}, camVersion={CamVersion}", holder, holderType, newHolders.Length, camVersion);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password, camVersion);
+                await client.AddToShipmentAsync(holder, holderType, shipTicket!, newHolders);
+                return (true, "FEATS AddToShipment completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS AddToShipment failed for holder={Holder}", holder);
+                return (false, $"FEATS AddToShipment failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -383,7 +454,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS HoldHolder failed for holder={Holder}", holder);
-                return (false, $"FEATS HoldHolder failed: {ex.Message}");
+                return (false, $"FEATS HoldHolder failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -417,7 +488,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS ReleaseHolder failed for holder={Holder}", holder);
-                return (false, $"FEATS ReleaseHolder failed: {ex.Message}");
+                return (false, $"FEATS ReleaseHolder failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -497,7 +568,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS AttachJob failed for holder={Holder}", holder);
-                return (false, $"FEATS AttachJob failed: {ex.Message}");
+                return (false, $"FEATS AttachJob failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -523,7 +594,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS SetShipmentDestination failed for holder={Holder}", holder);
-                return (false, $"FEATS SetShipmentDestination failed: {ex.Message}");
+                return (false, $"FEATS SetShipmentDestination failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -549,7 +620,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS TransferHolderJob failed for srcHolder={SrcHolder}", srcHolder);
-                return (false, $"FEATS TransferHolderJob failed: {ex.Message}");
+                return (false, $"FEATS TransferHolderJob failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -575,7 +646,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS Ship failed for holder={Holder}", holder);
-                return (false, $"FEATS Ship failed: {ex.Message}");
+                return (false, $"FEATS Ship failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -601,7 +672,7 @@ namespace WDC_STACKER.API.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FEATS ShipL1 failed for holder={Holder}", holder);
-                return (false, $"FEATS ShipL1 failed: {ex.Message}");
+                return (false, $"FEATS ShipL1 failed: {ExtractCleanErrorMessage(ex)}");
             }
         }
 
@@ -628,7 +699,7 @@ namespace WDC_STACKER.API.Services
             {
                 // A real FEATS/SOAP fault (business rule violation) - Ship1 genuinely failed.
                 _logger.LogError(ex, "FEATS Ship1 failed for holder={Holder}", holder);
-                return (false, $"FEATS Ship1 failed: {ex.Message}");
+                return (false, $"FEATS Ship1 failed: {ExtractCleanErrorMessage(ex)}");
             }
             catch (Exception ex)
             {
@@ -636,6 +707,130 @@ namespace WDC_STACKER.API.Services
                 return (true, "FEATS Ship1 completed successfully (empty response).");
             }
         }
+
+        #region Feats Unship
+
+        /// <summary>
+        /// Job Unship flow (step 3): un-ships a Shipping Id (e.g., UNSHIP(SHIPPINGID, 'SHPBOX')).
+        /// </summary>
+        public async Task<(bool Success, string Message)> UnshipAsync(string holder, string? holderType, string username, string password, string camVersion)
+        {
+            _logger.LogInformation("FEATS UnShip -> holder={Holder}, camVersion={CamVersion}", holder, camVersion);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password, camVersion);
+                await client.UnShipAsync(holder, holderType!);
+                return (true, "FEATS UnShip completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS UnShip failed for holder={Holder}", holder);
+                return (false, $"FEATS UnShip failed: {ExtractCleanErrorMessage(ex)}");
+            }
+        }
+
+        /// <summary>
+        /// Job Unship flow (step 4): breaks up <paramref name="holder"/> (the
+        /// Shipping Id) into its <paramref name="childHolders"/>.
+        /// NOTE: The generated BreakupJob WSDL contract uses <c>holder_info</c>
+        /// (Name/Type only) — unlike <c>child_holder_info</c> used by AddJob,
+        /// it does NOT define a Position field. Position is accepted here for
+        /// forward-compatibility/logging only and is not sent to FEATS.
+        /// </summary>
+        public async Task<(bool Success, string Message)> BreakupJobAsync(string holder, string? holderType, IReadOnlyList<(string HolderId, int Position, string? ChildHolderType)> childHolders, string username, string password, string camVersion)
+        {
+            _logger.LogInformation("FEATS BreakupJob -> holder={Holder}, childHolderCount={ChildHolderCount}, camVersion={CamVersion}", holder, childHolders.Count, camVersion);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password, camVersion);
+
+                var holders = childHolders
+                    .Select(child => new FeatsServiceReference.holder_info
+                    {
+                        Name = child.HolderId,
+                        Type = child.ChildHolderType!
+                    })
+                    .ToArray();
+
+                await client.BreakupJobAsync(holder, holderType!, holders);
+                return (true, "FEATS BreakupJob completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS BreakupJob failed for holder={Holder}", holder);
+                return (false, $"FEATS BreakupJob failed: {ExtractCleanErrorMessage(ex)}");
+            }
+        }
+
+        /// <summary>
+        /// Job Unship flow (step 5): sets <paramref name="holder"/>'s status
+        /// (e.g., SETHOLDERSTATUS(HOLDER, HOLDERTYPE, 'R')).
+        /// </summary>
+        public async Task<(bool Success, string Message)> SetHolderStatusAsync(string holder, string? holderType, string newHolderStatus, string username, string password, string camVersion)
+        {
+            _logger.LogInformation("FEATS SetHolderStatus -> holder={Holder}, newHolderStatus={NewHolderStatus}, camVersion={CamVersion}", holder, newHolderStatus, camVersion);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password, camVersion);
+                await client.SetHolderStatusAsync(holder, holderType!, newHolderStatus);
+                return (true, "FEATS SetHolderStatus completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS SetHolderStatus failed for holder={Holder}", holder);
+                return (false, $"FEATS SetHolderStatus failed: {ExtractCleanErrorMessage(ex)}");
+            }
+        }
+
+        /// <summary>
+        /// Job Unship flow (step 7): closes <paramref name="holder"/>'s job
+        /// (e.g., CLOSEHOLDERJOB(HOLDER, HOLDERTYPE, 'CLOSE', CloseChildren)).
+        /// </summary>
+        public async Task<(bool Success, string Message)> CloseHolderJobAsync(string holder, string? holderType, string reason, bool closeChildren, string username, string password, string camVersion)
+        {
+            _logger.LogInformation("FEATS CloseHolderJob -> holder={Holder}, reason={Reason}, camVersion={CamVersion}", holder, reason, camVersion);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password, camVersion);
+                await client.CloseHolderJobAsync(holder, holderType!, reason, closeChildren);
+                return (true, "FEATS CloseHolderJob completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS CloseHolderJob failed for holder={Holder}", holder);
+                return (false, $"FEATS CloseHolderJob failed: {ExtractCleanErrorMessage(ex)}");
+            }
+        }
+
+        #endregion
 
     }
 }

@@ -64,6 +64,37 @@ namespace WDC_STACKER.API.Services
             });
         }
 
+        /// <summary>
+        /// Resolves an AD username/employee ID to the user's full display name.
+        /// Falls back to the original value if the lookup fails or no match is found.
+        /// Intended for display purposes only — the raw ID should still be what's persisted in SQL.
+        /// </summary>
+        public async Task<string> GetDisplayNameAsync(string usernameOrId)
+        {
+            if (string.IsNullOrWhiteSpace(usernameOrId))
+                return usernameOrId;
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var samAccountName = NormalizeUsername(usernameOrId);
+
+                    using var context = new PrincipalContext(ContextType.Domain, _domain);
+                    var principal = UserPrincipal.FindByIdentity(context, IdentityType.SamAccountName, samAccountName);
+
+                    return !string.IsNullOrWhiteSpace(principal?.DisplayName)
+                        ? principal.DisplayName
+                        : usernameOrId;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "AD display name lookup failed for user={UsernameOrId}", usernameOrId);
+                    return usernameOrId;
+                }
+            });
+        }
+
         private static string NormalizeUsername(string username)
         {
             if (username.Contains('\\'))

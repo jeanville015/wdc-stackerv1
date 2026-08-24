@@ -363,7 +363,7 @@ export default function WithdrawalRackPanel({
                                             }}
                                             aria-label={
                                                 box
-                                                    ? `Open ShipBoxes for ${formatBoxName(box.BoxNo, rack.RackNum)}${heldHolders.length > 0 ? `, ${heldHolders.length} holders on in-site hold` : ""}`
+                                                    ? `Open ShipBoxes for ${formatBoxName(box.LayerRowNum, box.LayerColNum, rackColumnCount)}${heldHolders.length > 0 ? `, ${heldHolders.length} holders on in-site hold` : ""}`
                                                     : "Empty rack cell"
                                             }
                                         >
@@ -371,7 +371,7 @@ export default function WithdrawalRackPanel({
                                                 <>
                                                     <span className="rack-box-content rack-box-content--expanded-mini-grid">
                                                         <span className="rack-box-name">
-                                                            {formatBoxName(box.BoxNo, rack.RackNum)}
+                                                            {formatBoxName(box.LayerRowNum, box.LayerColNum, rackColumnCount)}
                                                         </span>
 
                                                         <MiniShipBoxGrid
@@ -404,6 +404,8 @@ export default function WithdrawalRackPanel({
             {selectedBox && (
                 <WithdrawalShipBoxModal
                     box={selectedBox}
+                    rackNumber={rack.RackNum}
+                    rackBoxColumnCount={rackColumnCount}
                     layerCount={shipBoxLayerCount}
                     columnCount={shipBoxColumnCount}
                     maxItemPerShipBox={maxItemPerShipBox}

@@ -596,6 +596,18 @@ export default function WithdrawalDisassociationModal({
 
 
 
+    const shippingIdInputRef =
+
+        useRef<HTMLInputElement | null>(null);
+
+
+
+    const holderInputRef =
+
+        useRef<HTMLInputElement | null>(null);
+
+
+
     useEffect(() => {
 
         if (confirmationOpen) {
@@ -605,6 +617,30 @@ export default function WithdrawalDisassociationModal({
         }
 
     }, [confirmationOpen]);
+
+
+
+    useEffect(() => {
+
+        if (confirmationOpen) {
+
+            return;
+
+        }
+
+
+
+        const targetInput = shippingIdVerified
+
+            ? holderInputRef.current
+
+            : shippingIdInputRef.current;
+
+
+
+        targetInput?.focus();
+
+    }, [shippingIdVerified, confirmationOpen]);
 
 
 
@@ -659,6 +695,26 @@ export default function WithdrawalDisassociationModal({
 
 
 
+    const remainingHolderCount = Math.max(
+
+        0,
+
+        includedHolderCount - verifiedHolderCount
+
+    );
+
+
+
+    const recentlyVerifiedRecord =
+
+        focusedIncludedRecordIndex === null
+
+            ? null
+
+            : includedRecords[focusedIncludedRecordIndex] ?? null;
+
+
+
     const isWithdrawDisabled =
 
         !allIncludedHoldersVerified ||
@@ -703,7 +759,7 @@ export default function WithdrawalDisassociationModal({
 
         holderProgressCircumference *
 
-        holderVerificationRatio;
+        (1 - holderVerificationRatio);
 
 
 
@@ -755,7 +811,17 @@ export default function WithdrawalDisassociationModal({
 
 
 
-        if (!normalizedHolder) {
+        if (
+
+            !normalizedHolder ||
+
+            !shippingIdVerified ||
+
+            allIncludedHoldersVerified ||
+
+            isWithdrawing
+
+        ) {
 
             return;
 
@@ -902,6 +968,28 @@ export default function WithdrawalDisassociationModal({
         setShippingIdVerified(false);
 
         setShippingIdError("");
+
+    };
+
+
+
+    const handleShippingIdRescan = () => {
+
+        if (isWithdrawing || isRequestFulfilled) {
+
+            return;
+
+        }
+
+
+
+        setShippingIdVerified(false);
+
+        setShippingIdError("");
+
+        setHolder("");
+
+        setHolderNotFound(false);
 
     };
 
@@ -1469,7 +1557,7 @@ export default function WithdrawalDisassociationModal({
 
 
 
-                        <section className="withdrawal-disassociation-section">
+                        <section className="withdrawal-disassociation-section withdrawal-verification-section">
 
                             <h3>VERIFY HOLDERS</h3>
 
@@ -1478,360 +1566,411 @@ export default function WithdrawalDisassociationModal({
                                     className="alert alert-info mb-3"
                                     role="status"
                                 >
-                                    This request is already fulfilled. Actual output ({request.ActualOutput}) meets or exceeds the requested total ({request.Total}). No additional holders can be withdrawn.
+                                    This request is already fulfilled. Actual output (
+                                    {request.ActualOutput}) meets or exceeds the requested
+                                    total ({request.Total}). No additional holders can be
+                                    withdrawn.
                                 </div>
                             )}
 
-                            <div className="withdrawal-verify-grid">
-
-
-                                <div className="withdrawal-verify-item">
-
-                                    <label htmlFor="withdrawal-shipping-id">
-
-                                        SHIPPING BOX ID
-
-                                    </label>
-
-
-
-                                    <form
-
-                                        className="withdrawal-verify-control"
-
-                                        onSubmit={handleShippingIdVerify}
-
-                                        noValidate
-
-                                    >
-
-                                        <input
-
-                                            id="withdrawal-shipping-id"
-
-                                            type="text"
-
-                                            className="form-control"
-
-                                            value={shippingId}
-
-                                            disabled={isWithdrawing || shippingIdVerifying}
-
-                                            onChange={(event) =>
-
-                                                handleShippingIdChange(
-
-                                                    event.target.value
-
-                                                )
-
-                                            }
-
-                                            autoComplete="off"
-
-                                            aria-invalid={Boolean(shippingIdError)}
-
-                                            aria-describedby="withdrawal-shipping-id-feedback"
-
-                                        />
-
-
-
-                                        <button
-
-                                            type="submit"
-
-                                            className="btn btn-primary withdrawal-verify-button"
-
-                                            disabled={
-
-                                                isWithdrawing ||
-
-                                                shippingIdVerifying ||
-
-                                                !shippingId.trim()
-
-                                            }
-
-                                        >
-
-                                            {shippingIdVerifying ? "VERIFYING..." : "VERIFY"}
-
-                                        </button>
-
-                                    </form>
-
-
-
-                                    <div
-
-                                        id="withdrawal-shipping-id-feedback"
-
-                                        className={`withdrawal-holder-progress ${shippingIdError
-                                                ? "is-not-found"
-                                                : shippingIdVerified
-                                                    ? "is-complete"
-                                                    : "is-pending"
-                                            }`}
-
-                                        role={shippingIdError ? "alert" : "status"}
-
-                                        aria-live="polite"
-
-                                    >
-
-                                        <i
-
-                                            className={
-                                                shippingIdError
-                                                    ? "fa-regular fa-circle-xmark"
-                                                    : shippingIdVerified
-                                                        ? "fa-regular fa-circle-check"
-                                                        : "fa-solid fa-triangle-exclamation"
-                                            }
-
-                                            aria-hidden="true"
-
-                                        />
-
-
-
-                                        <span>
-
-                                            {shippingIdError ||
-
-                                                (shippingIdVerified
-
-                                                    ? "Shipping Box Id verified."
-
-                                                    : "Shipping Box Id not verified.")}
-
+                            <div className="withdrawal-verification-stages">
+                                <section
+                                    className={[
+                                        "withdrawal-verification-stage",
+                                        "withdrawal-shipping-stage",
+                                        shippingIdVerified
+                                            ? "is-complete"
+                                            : "is-active",
+                                    ].join(" ")}
+                                >
+                                    <header className="withdrawal-verification-stage-header">
+                                        <span className="withdrawal-verification-stage-marker">
+                                            {shippingIdVerified ? (
+                                                <i
+                                                    className="fa-solid fa-check"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : (
+                                                "1"
+                                            )}
                                         </span>
 
-                                    </div>
+                                        <div className="withdrawal-verification-stage-heading">
+                                            <strong>
+                                                {shippingIdVerified ? (
+                                                    <>
+                                                        Shipping Box {shippingId} verified
+                                                    </>
+                                                ) : (
+                                                    "Shipping Box Verification"
+                                                )}
+                                            </strong>
 
-                                </div>
-
-
-
-                                <div className="withdrawal-verify-item">
-
-                                    <label htmlFor="withdrawal-holder">
-
-                                        HOLDER
-
-                                    </label>
-
-
-
-                                    <form
-
-                                        className="withdrawal-verify-control"
-
-                                        onSubmit={handleHolderVerify}
-
-                                        noValidate
-
-                                    >
-
-                                        <input
-
-                                            id="withdrawal-holder"
-
-                                            type="text"
-
-                                            className="form-control"
-
-                                            value={holder}
-
-                                            onChange={(event) =>
-
-                                                handleHolderChange(
-
-                                                    event.target.value
-
-                                                )
-
-                                            }
-
-                                            onKeyDown={(event) => {
-
-                                                if (event.key === "Enter") {
-
-                                                    event.preventDefault();
-
-                                                    event.currentTarget.form?.requestSubmit();
-
-                                                }
-
-                                            }}
-
-                                            autoComplete="off"
-
-                                            aria-invalid={holderNotFound}
-
-                                            aria-describedby="withdrawal-holder-feedback"
-
-                                        />
-
-
-
-                                        <button
-
-                                            type="submit"
-
-                                            className="btn btn-primary withdrawal-verify-button"
-
-                                        >
-
-                                            VERIFY
-
-                                        </button>
-
-                                    </form>
-
-
-
-                                    {holderNotFound ? (
-
-                                        <div
-
-                                            id="withdrawal-holder-feedback"
-
-                                            className="withdrawal-holder-progress is-not-found"
-
-                                            role="alert"
-
-                                        >
-
-                                            <i
-
-                                                className="fa-regular fa-circle-xmark"
-
-                                                aria-hidden="true"
-
-                                            />
-
-
-
-                                            <span>
-
-                                                Holder not found in Included.
-
-                                            </span>
-
+                                            {!shippingIdVerified && (
+                                                <small>
+                                                    Verify the Shipping Box ID before scanning
+                                                    its included holders.
+                                                </small>
+                                            )}
                                         </div>
 
-                                    ) : (
-
-                                        <div
-
-                                            id="withdrawal-holder-feedback"
-
-                                            className={`withdrawal-holder-progress ${allIncludedHoldersVerified
-
-                                                    ? "is-complete"
-
-                                                    : "is-pending"
-
-                                                }`}
-
-                                            role="status"
-
-                                            aria-live="polite"
-
-                                            aria-label={`${verifiedHolderCount} out of ${includedHolderCount} holders verified`}
-
-                                        >
-
-                                            {allIncludedHoldersVerified ? (
+                                        {shippingIdVerified ? (
+                                            <div className="withdrawal-verification-stage-actions">
+                                                <button
+                                                    type="button"
+                                                    className="withdrawal-verification-rescan"
+                                                    onClick={handleShippingIdRescan}
+                                                    disabled={
+                                                        isWithdrawing ||
+                                                        isRequestFulfilled
+                                                    }
+                                                >
+                                                    <i
+                                                        className="fa-solid fa-arrows-rotate"
+                                                        aria-hidden="true"
+                                                    />
+                                                    Re-scan
+                                                </button>
 
                                                 <i
-
-                                                    className="fa-regular fa-circle-check"
-
+                                                    className="fa-solid fa-chevron-down withdrawal-verification-chevron"
                                                     aria-hidden="true"
-
                                                 />
+                                            </div>
+                                        ) : (
+                                            <i
+                                                className="fa-solid fa-chevron-up withdrawal-verification-chevron"
+                                                aria-hidden="true"
+                                            />
+                                        )}
+                                    </header>
 
-                                            ) : (
+                                    {!shippingIdVerified && (
+                                        <div className="withdrawal-verification-stage-body">
+                                            <div className="withdrawal-verification-field">
+                                                <label htmlFor="withdrawal-shipping-id">
+                                                    SHIPPING BOX ID
+                                                </label>
 
-                                                <svg
-
-                                                    className="withdrawal-holder-progress-ring"
-
-                                                    viewBox="0 0 18 18"
-
-                                                    aria-hidden="true"
-
+                                                <form
+                                                    className="withdrawal-verify-control"
+                                                    onSubmit={handleShippingIdVerify}
+                                                    noValidate
                                                 >
+                                                    <div className="withdrawal-scan-input-wrap">
+                                                        <input
+                                                            ref={shippingIdInputRef}
+                                                            id="withdrawal-shipping-id"
+                                                            type="text"
+                                                            className="form-control"
+                                                            value={shippingId}
+                                                            placeholder="Scan or enter Shipping Box ID"
+                                                            disabled={
+                                                                isWithdrawing ||
+                                                                shippingIdVerifying ||
+                                                                isRequestFulfilled
+                                                            }
+                                                            onChange={(event) =>
+                                                                handleShippingIdChange(
+                                                                    event.target.value
+                                                                )
+                                                            }
+                                                            autoComplete="off"
+                                                            aria-invalid={Boolean(
+                                                                shippingIdError
+                                                            )}
+                                                            aria-describedby="withdrawal-shipping-id-feedback"
+                                                        />
 
-                                                    <circle
+                                                        <i
+                                                            className="fa-solid fa-barcode withdrawal-scan-input-icon"
+                                                            aria-hidden="true"
+                                                        />
+                                                    </div>
 
-                                                        className="withdrawal-holder-progress-ring-track"
-
-                                                        cx="9"
-
-                                                        cy="9"
-
-                                                        r={holderProgressRadius}
-
-                                                    />
-
-
-
-                                                    <circle
-
-                                                        className="withdrawal-holder-progress-ring-value"
-
-                                                        cx="9"
-
-                                                        cy="9"
-
-                                                        r={holderProgressRadius}
-
-                                                        strokeDasharray={
-
-                                                            holderProgressCircumference
-
+                                                    <button
+                                                        type="submit"
+                                                        className="btn btn-primary withdrawal-verify-button"
+                                                        disabled={
+                                                            isWithdrawing ||
+                                                            shippingIdVerifying ||
+                                                            isRequestFulfilled ||
+                                                            !shippingId.trim()
                                                         }
+                                                    >
+                                                        {shippingIdVerifying
+                                                            ? "VERIFYING..."
+                                                            : "VERIFY"}
+                                                    </button>
+                                                </form>
 
-                                                        strokeDashoffset={
+                                                {shippingIdError && (
+                                                    <div
+                                                        id="withdrawal-shipping-id-feedback"
+                                                        className="withdrawal-stage-message is-error"
+                                                        role="alert"
+                                                    >
+                                                        <i
+                                                            className="fa-regular fa-circle-xmark"
+                                                            aria-hidden="true"
+                                                        />
+                                                        <span>{shippingIdError}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </section>
 
-                                                            holderProgressOffset
-
-                                                        }
-
-                                                        transform="rotate(-90 9 9)"
-
-                                                    />
-
-                                                </svg>
-
+                                <section
+                                    className={[
+                                        "withdrawal-verification-stage",
+                                        "withdrawal-holder-stage",
+                                        !shippingIdVerified
+                                            ? "is-locked"
+                                            : allIncludedHoldersVerified
+                                              ? "is-complete"
+                                              : "is-active",
+                                    ].join(" ")}
+                                >
+                                    <header className="withdrawal-verification-stage-header">
+                                        <span className="withdrawal-verification-stage-marker">
+                                            {!shippingIdVerified ? (
+                                                <i
+                                                    className="fa-solid fa-lock"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : allIncludedHoldersVerified ? (
+                                                <i
+                                                    className="fa-solid fa-check"
+                                                    aria-hidden="true"
+                                                />
+                                            ) : (
+                                                "2"
                                             )}
+                                        </span>
 
+                                        <div className="withdrawal-verification-stage-heading">
+                                            <strong>
+                                                Holder Verification
+                                                {shippingIdVerified && (
+                                                    <>
+                                                        {" "}({verifiedHolderCount} of{" "}
+                                                        {includedHolderCount})
+                                                    </>
+                                                )}
+                                            </strong>
 
-
-                                            <span>
-
-                                                {verifiedHolderCount} out of{" "}
-
-                                                {includedHolderCount} included holders verified.
-
-                                            </span>
-
+                                            <small>
+                                                {!shippingIdVerified ? (
+                                                    "Available after the Shipping Box ID is verified."
+                                                ) : allIncludedHoldersVerified ? (
+                                                    "All included holders have been verified."
+                                                ) : (
+                                                    <>
+                                                        {remainingHolderCount}{" "}
+                                                        {remainingHolderCount === 1
+                                                            ? "holder"
+                                                            : "holders"}{" "}
+                                                        remaining.
+                                                    </>
+                                                )}
+                                            </small>
                                         </div>
 
+                                        <i
+                                            className={[
+                                                "fa-solid",
+                                                shippingIdVerified
+                                                    ? "fa-chevron-up"
+                                                    : "fa-chevron-down",
+                                                "withdrawal-verification-chevron",
+                                            ].join(" ")}
+                                            aria-hidden="true"
+                                        />
+                                    </header>
+
+                                    {shippingIdVerified && (
+                                        <div className="withdrawal-verification-stage-body withdrawal-holder-stage-body">
+                                            <div className="withdrawal-verification-scan">
+                                                <label htmlFor="withdrawal-holder">
+                                                    SCAN HOLDER BARCODE
+                                                </label>
+
+                                                <form
+                                                    className="withdrawal-verify-control"
+                                                    onSubmit={handleHolderVerify}
+                                                    noValidate
+                                                >
+                                                    <div className="withdrawal-scan-input-wrap">
+                                                        <input
+                                                            ref={holderInputRef}
+                                                            id="withdrawal-holder"
+                                                            type="text"
+                                                            className="form-control"
+                                                            value={holder}
+                                                            placeholder="Scan or enter holder barcode"
+                                                            disabled={
+                                                                !shippingIdVerified ||
+                                                                allIncludedHoldersVerified ||
+                                                                isWithdrawing ||
+                                                                isRequestFulfilled
+                                                            }
+                                                            onChange={(event) =>
+                                                                handleHolderChange(
+                                                                    event.target.value
+                                                                )
+                                                            }
+                                                            autoComplete="off"
+                                                            aria-invalid={holderNotFound}
+                                                            aria-describedby="withdrawal-holder-feedback"
+                                                        />
+
+                                                        <i
+                                                            className="fa-solid fa-barcode withdrawal-scan-input-icon"
+                                                            aria-hidden="true"
+                                                        />
+                                                    </div>
+
+                                                    <button
+                                                        type="submit"
+                                                        className="btn btn-primary withdrawal-verify-button"
+                                                        disabled={
+                                                            !shippingIdVerified ||
+                                                            allIncludedHoldersVerified ||
+                                                            isWithdrawing ||
+                                                            isRequestFulfilled ||
+                                                            !holder.trim()
+                                                        }
+                                                    >
+                                                        VERIFY
+                                                    </button>
+                                                </form>
+
+                                                <div
+                                                    id="withdrawal-holder-feedback"
+                                                    className={[
+                                                        "withdrawal-stage-message",
+                                                        holderNotFound
+                                                            ? "is-error"
+                                                            : allIncludedHoldersVerified
+                                                              ? "is-success"
+                                                              : "is-guidance",
+                                                    ].join(" ")}
+                                                    role={
+                                                        holderNotFound
+                                                            ? "alert"
+                                                            : "status"
+                                                    }
+                                                    aria-live="polite"
+                                                >
+                                                    <i
+                                                        className={
+                                                            holderNotFound
+                                                                ? "fa-regular fa-circle-xmark"
+                                                                : allIncludedHoldersVerified
+                                                                  ? "fa-regular fa-circle-check"
+                                                                  : "fa-solid fa-circle-info"
+                                                        }
+                                                        aria-hidden="true"
+                                                    />
+
+                                                    <span>
+                                                        {holderNotFound
+                                                            ? "Holder not found in Included."
+                                                            : allIncludedHoldersVerified
+                                                              ? "All included holders verified."
+                                                              : "Scan the next included holder."}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div
+                                                className="withdrawal-holder-progress-panel"
+                                                role="status"
+                                                aria-label={[
+                                                    verifiedHolderCount,
+                                                    "out of",
+                                                    includedHolderCount,
+                                                    "included holders verified",
+                                                ].join(" ")}
+                                            >
+                                                <div className="withdrawal-holder-progress-ring-visual">
+                                                    <svg
+                                                        className="withdrawal-holder-progress-ring"
+                                                        viewBox="0 0 18 18"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <circle
+                                                            className="withdrawal-holder-progress-ring-track"
+                                                            cx="9"
+                                                            cy="9"
+                                                            r={holderProgressRadius}
+                                                        />
+
+                                                        <circle
+                                                            className="withdrawal-holder-progress-ring-value"
+                                                            cx="9"
+                                                            cy="9"
+                                                            r={holderProgressRadius}
+                                                            strokeDasharray={
+                                                                holderProgressCircumference
+                                                            }
+                                                            strokeDashoffset={
+                                                                holderProgressOffset
+                                                            }
+                                                            transform="rotate(-90 9 9)"
+                                                        />
+                                                    </svg>
+
+                                                    <strong>
+                                                        {verifiedHolderCount}/
+                                                        {includedHolderCount}
+                                                    </strong>
+                                                </div>
+
+                                                <div className="withdrawal-holder-progress-details">
+                                                    <strong>
+                                                        {verifiedHolderCount} of{" "}
+                                                        {includedHolderCount} included holders
+                                                        verified
+                                                    </strong>
+
+                                                    <span>
+                                                        {remainingHolderCount} remaining
+                                                    </span>
+
+                                                    {recentlyVerifiedRecord && (
+                                                        <div className="withdrawal-recently-verified">
+                                                            <span>RECENTLY VERIFIED</span>
+
+                                                            <div>
+                                                                <i
+                                                                    className="fa-regular fa-circle-check"
+                                                                    aria-hidden="true"
+                                                                />
+
+                                                                <strong>
+                                                                    {
+                                                                        recentlyVerifiedRecord.Holder
+                                                                    }
+                                                                </strong>
+
+                                                                <time>
+                                                                    {formatTimestamp(
+                                                                        recentlyVerifiedRecord.UpdateTs
+                                                                    )}
+                                                                </time>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     )}
-
-                                </div>
-
+                                </section>
                             </div>
-
                         </section>
-
-
-
                         <section className="withdrawal-disassociation-section">
 
                             <h3>
