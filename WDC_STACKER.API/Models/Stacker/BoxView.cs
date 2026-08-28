@@ -22,6 +22,17 @@ namespace WDC_STACKER.API.Models.Stacker
         public int BoxListCount { get; set; }
         public decimal BoxListPercentage { get; set; }
         public bool HasReleaseStatus { get; set; }
+        /// <summary>
+        /// Zero-based indexes in the same UPDATETS/HOLDER order used by
+        /// GetBoxAssignmentsAsync.
+        /// </summary>
+        public List<int> ReleaseHolderPositions { get; set; } = new();
+
+        /// <summary>
+        /// Zero-based indexes in the same UPDATETS/HOLDER order used by
+        /// GetBoxAssignmentsAsync.
+        /// </summary>
+        public List<int> HeldHolderPositions { get; set; } = new();
         public List<ShipBoxView> ShipBoxes { get; set; } = new();
     } 
 }

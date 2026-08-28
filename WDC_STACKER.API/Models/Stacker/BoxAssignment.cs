@@ -8,6 +8,7 @@ public class BoxAssignment
     public string ProductName { get; set; } = string.Empty;
     public string Factory { get; set; } = string.Empty;
     public string Lec { get; set; } = string.Empty;
+    public string ClassName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string Partnum { get; set; } = string.Empty;
     public string Pennum { get; set; } = string.Empty;

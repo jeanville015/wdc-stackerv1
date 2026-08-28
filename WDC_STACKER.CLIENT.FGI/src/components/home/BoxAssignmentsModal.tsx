@@ -13,6 +13,7 @@ interface Props {
     productName?: string | null;
     partNum?: string | null;
     penNum?: string | null;
+    camVersion?: string | null;
     onClose: () => void;
     onDisassociateSuccess?: () => void;
 }
@@ -26,6 +27,7 @@ export default function BoxAssignmentsModal({
     productName,
     partNum,
     penNum,
+    camVersion,
     onClose,
     onDisassociateSuccess,
 }: Props) {
@@ -142,6 +144,11 @@ export default function BoxAssignmentsModal({
                                         <strong>LEC:</strong>
                                         {shipBox.Lec || "—"}
                                     </span>
+
+                                    <span>
+                                        <strong>CAM:</strong>
+                                        {camVersion ? `${camVersion}` : "—"}
+                                    </span>
                                 </div>
                             </div>
 
@@ -170,6 +177,7 @@ export default function BoxAssignmentsModal({
                                                 <th>Qty</th>
                                                 <th>Factory</th>
                                                 <th>LEC</th>
+                                                <th>Class</th>
                                                 <th>Status</th>
                                                 <th>Action</th>
                                             </tr>
@@ -201,6 +209,8 @@ export default function BoxAssignmentsModal({
                                                         <td>{row.Factory || "—"}</td>
 
                                                         <td>{row.Lec || "—"}</td>
+
+                                                        <td>{row.ClassName || "—"}</td>
 
                                                         <td>
                                                             {isHeld ? (
@@ -244,7 +254,7 @@ export default function BoxAssignmentsModal({
                                             {rows.length === 0 && (
                                                 <tr>
                                                     <td
-                                                        colSpan={7}
+                                                        colSpan={8}
                                                         className="text-center text-muted p-4"
                                                     >
                                                         No assignments found.

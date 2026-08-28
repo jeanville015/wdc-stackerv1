@@ -830,6 +830,41 @@ namespace WDC_STACKER.API.Services
             }
         }
 
+        /// <summary>
+        /// Sets a single container attribute on <paramref name="holder"/>
+        /// (e.g., SETCONTAINERATTRIBUTES(HOLDER, HOLDERTYPE, [{AttributeName, AttributeValue}])).
+        /// </summary>
+        public async Task<(bool Success, string Message)> SetContainerAttributesAsync(string holder, string? holderType, string attributeName, string attributeValue, string username, string password, string camVersion)
+        {
+            _logger.LogInformation("FEATS SetContainerAttributes -> holder={Holder}, attributeName={AttributeName}, attributeValue={AttributeValue}, camVersion={CamVersion}", holder, attributeName, attributeValue, camVersion);
+
+            var usernameWithDomain = username.StartsWith(
+                "AD/",
+                StringComparison.OrdinalIgnoreCase)
+                    ? username
+                    : $"AD/{username}";
+
+            try
+            {
+                using var client = CreateClient(usernameWithDomain, password, camVersion);
+                var newAttributes = new[]
+                {
+                    new container_attribute
+                    {
+                        Name = attributeName,
+                        Value = attributeValue
+                    }
+                };
+                await client.SetContainerAttributesAsync(holder, holderType!, newAttributes);
+                return (true, "FEATS SetContainerAttributes completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "FEATS SetContainerAttributes failed for holder={Holder}", holder);
+                return (false, $"FEATS SetContainerAttributes failed: {ExtractCleanErrorMessage(ex)}");
+            }
+        }
+
         #endregion
 
     }

@@ -125,7 +125,7 @@ export default function HomePage() {
         <div
             style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(220px, 280px) minmax(0, 1fr)",
+                gridTemplateColumns: "minmax(220px, 320px) minmax(0, 1fr)",
                 gap: "1rem",
                 alignItems: "start",
                 width: "100%",
@@ -138,45 +138,22 @@ export default function HomePage() {
             />
 
             <section style={{ minWidth: 0, width: "100%" }}>
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        marginBottom: "1rem",
-                    }}
-                >
-                    <h2
-                        style={{
-                            fontSize: "1.1rem",
-                            fontWeight: "600",
-                            color: "#172b4d",
-                            margin: 0,
-                        }}
-                    >
-                        Rack View
-                    </h2>
+                <div className="rack-view-toolbar">
+                    <div className="rack-view-toolbar-heading">
+                        <span className="rack-view-toolbar-icon" aria-hidden="true">
+                            <i className="fa-solid fa-border-all" />
+                        </span>
 
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <h2 className="rack-view-toolbar-title">
+                            Rack View
+                        </h2>
+                    </div>
+
+                    <div className="rack-view-toolbar-actions">
                         <button
-                            className="btn btn-sm"
+                            className="btn btn-sm rack-view-toolbar-button rack-view-toolbar-button--refresh"
                             onClick={handleRefresh}
                             disabled={refreshLoading || loading}
-                            style={{
-                                background: refreshLoading || loading
-                                    ? "#a0b4d6"
-                                    : "#0052cc",
-                                color: "#ffffff",
-                                border: "none",
-                                borderRadius: "6px",
-                                padding: "0.4rem 0.8rem",
-                                fontSize: "0.8rem",
-                                fontWeight: "500",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                cursor: refreshLoading || loading ? "not-allowed" : "pointer",
-                            }}
                         >
                             {refreshLoading ? (
                                 <>
@@ -189,46 +166,19 @@ export default function HomePage() {
                                 </>
                             ) : (
                                 <>
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width="14"
-                                        height="14"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                    >
-                                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                        <path d="M3 3v5h5" />
-                                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                                        <path d="M16 21h5v-5" />
-                                    </svg>
+                                    <i
+                                        className="fa-solid fa-arrows-rotate"
+                                        aria-hidden="true"
+                                    />
                                     Refresh
                                 </>
                             )}
                         </button>
 
                         <button
-                            className="btn btn-sm"
+                            className="btn btn-sm rack-view-toolbar-button rack-view-toolbar-button--csv"
                             onClick={handleExportCsv}
                             disabled={csvExportLoading || loading}
-                            style={{
-                                background: csvExportLoading || loading
-                                    ? "#a0b4d6"
-                                    : "#0052cc",
-                                color: "#ffffff",
-                                border: "none",
-                                borderRadius: "6px",
-                                padding: "0.4rem 0.8rem",
-                                fontSize: "0.8rem",
-                                fontWeight: "500",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "0.5rem",
-                                cursor: csvExportLoading || loading ? "not-allowed" : "pointer",
-                            }}
                         >
                             {csvExportLoading ? (
                                 <>
@@ -241,7 +191,10 @@ export default function HomePage() {
                                 </>
                             ) : (
                                 <>
-                                    <i className="fa-solid fa-file-csv" aria-hidden="true" />
+                                    <i
+                                        className="fa-solid fa-file-csv"
+                                        aria-hidden="true"
+                                    />
                                     Download CSV
                                 </>
                             )}

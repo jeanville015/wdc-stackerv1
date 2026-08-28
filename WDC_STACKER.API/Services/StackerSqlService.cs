@@ -52,7 +52,6 @@ public class StackerSqlService
 
 
     public StackerSqlService(IConfiguration configuration, IEmailService emailService)
-
     {
 
         _connectionString = configuration.GetConnectionString("WdcStackerDb")
@@ -63,7 +62,31 @@ public class StackerSqlService
 
     }
 
+    private static List<int> ParseHolderStatusPositions(
+        object value,
+        string expectedFlag)
+    {
+        var flags = value is DBNull
+            ? string.Empty
+            : Convert.ToString(value) ?? string.Empty;
 
+        return flags
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select((flag, index) => new
+            {
+                Flag = flag.Trim(),
+                Index = index
+            })
+            .Where(item =>
+                string.Equals(
+                    item.Flag,
+                    expectedFlag,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .Select(item => item.Index)
+            .ToList();
+    } 
 
     public async Task<bool> HolderExistsAsync(string holder)
 
@@ -107,37 +130,40 @@ public class StackerSqlService
 
         const string sql = """
 
-        SELECT 
+        SELECT  
+            bd.[BOXNO], 
+            bd.[RACKNUM], 
+            bd.[LAYERROWNUM], 
+            bd.[LAYERCOLNUM], 
+            COUNT(ha.[BOXNAME]) AS BoxListCount, 
+            CAST( 
+                (COUNT(ha.[BOXNAME]) * 100.0) / NULLIF(@BaselineCount, 0)
+            AS DECIMAL(18, 2)) AS BoxListPercentage, 
+            MAX( 
+                CASE 
+                    WHEN UPPER(LTRIM(RTRIM(ISNULL(ha.[STATUS], '')))) = 'RELEASE' 
+                    THEN 1 
+                    ELSE 0 
+                END 
+            ) AS HasReleaseStatus,
 
-            bd.[BOXNO],
-
-            bd.[RACKNUM],
-
-            bd.[LAYERROWNUM],
-
-            bd.[LAYERCOLNUM],
-
-            COUNT(ha.[BOXNAME]) AS BoxListCount,
-
-            CAST(
-
-                (COUNT(ha.[BOXNAME]) * 100.0) / NULLIF(@BaselineCount, 0) 
-
-            AS DECIMAL(18, 2)) AS BoxListPercentage,
-
-            MAX(
-
+            STRING_AGG(
                 CASE
-
                     WHEN UPPER(LTRIM(RTRIM(ISNULL(ha.[STATUS], '')))) = 'RELEASE'
+                    THEN 'R'
 
-                    THEN 1
+                    WHEN UPPER(LTRIM(RTRIM(ISNULL(ha.[STATUS], '')))) = 'HOLD'
+                    THEN 'H'
 
-                    ELSE 0
-
-                END
-
-            ) AS HasReleaseStatus
+                    ELSE 'N'
+                END,
+                ','
+            ) WITHIN GROUP (
+                ORDER BY
+                    CASE WHEN ha.[UPDATETS] IS NULL THEN 1 ELSE 0 END,
+                    ha.[UPDATETS] ASC,
+                    ha.[HOLDER] ASC
+            ) AS HolderStatusFlags
 
         FROM [BOXMANAGEMENT].[BOX].[BOXDETAILS] bd
 
@@ -199,7 +225,17 @@ public class StackerSqlService
 
                 BoxListPercentage = reader.GetDecimal(5),
 
-                HasReleaseStatus = reader.GetInt32(6) == 1
+                HasReleaseStatus = reader.GetInt32(6) == 1,
+
+                ReleaseHolderPositions = ParseHolderStatusPositions(
+                    reader["HolderStatusFlags"],
+                    "R"
+                ),
+
+                HeldHolderPositions = ParseHolderStatusPositions(
+                    reader["HolderStatusFlags"],
+                    "H"
+                )
 
             });
 
@@ -1800,11 +1836,11 @@ public class StackerSqlService
 
         INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
 
-            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION], [JOB], [QTY], [STATUS], [UPDATEBY], [UPDATETS])
+            ([HOLDER], [BOXNAME], [PRODUCTNAME], [LEC], [Factory], [CLASS], [PROCESS], [GRADE], [CAMVERSION], [JOB], [QTY], [STATUS], [UPDATEBY], [UPDATETS])
 
         VALUES
 
-            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @GRADE, @CAMVERSION, @JOB, @QTY, @STATUS, @UPDATEBY, @UPDATETS);
+            (@HOLDER, @BOXNAME, @PRODUCTNAME, @LEC, @Factory, @CLASS, @PROCESS, @GRADE, @CAMVERSION, @JOB, @QTY, @STATUS, @UPDATEBY, @UPDATETS);
 
         """;
 
@@ -1823,6 +1859,9 @@ public class StackerSqlService
         command.Parameters.Add("@LEC", SqlDbType.VarChar, 50).Value = data.Lec;
 
         command.Parameters.Add("@Factory", SqlDbType.VarChar, 50).Value = data.Factory;
+
+        command.Parameters.Add("@CLASS", SqlDbType.VarChar, 50).Value =
+            string.IsNullOrWhiteSpace(data.ClassName) ? DBNull.Value : data.ClassName.Trim();
 
         command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = data.Process;
 
@@ -2135,6 +2174,8 @@ public class StackerSqlService
 
         [LEC],
 
+        [CLASS],
+
         [PARTNUM],
 
         [PENNUM],
@@ -2201,6 +2242,8 @@ public class StackerSqlService
                 Factory = Convert.ToString(reader["FACTORY"])?.Trim() ?? string.Empty,
 
                 Lec = Convert.ToString(reader["LEC"])?.Trim() ?? string.Empty,
+
+                ClassName = reader["CLASS"] is DBNull ? string.Empty : Convert.ToString(reader["CLASS"])?.Trim() ?? string.Empty,
 
                 Partnum = Convert.ToString(reader["PARTNUM"])?.Trim() ?? string.Empty,
 
@@ -3228,11 +3271,11 @@ public class StackerSqlService
 
             INSERT INTO [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN]
 
-                ([HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM], [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION], [JOB], [UPDATEBY], [UPDATETS])
+                ([HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM], [PRODUCTNAME], [LEC], [Factory], [CLASS], [PROCESS], [GRADE], [CAMVERSION], [JOB], [UPDATEBY], [UPDATETS])
 
             VALUES
 
-                (@HOLDER, @BOXNAME, @SHIPBOXNAME, @QTY, @PARTNUM, @PENNUM, @PRODUCTNAME, @LEC, @Factory, @PROCESS, @GRADE, @CAMVERSION, @JOB, @UPDATEBY, @UPDATETS);
+                (@HOLDER, @BOXNAME, @SHIPBOXNAME, @QTY, @PARTNUM, @PENNUM, @PRODUCTNAME, @LEC, @Factory, @CLASS, @PROCESS, @GRADE, @CAMVERSION, @JOB, @UPDATEBY, @UPDATETS);
 
             """;
 
@@ -3271,6 +3314,9 @@ public class StackerSqlService
                 : data.Lec.Trim();
 
         command.Parameters.Add("@Factory", SqlDbType.VarChar, 50).Value = data.Factory;
+
+        command.Parameters.Add("@CLASS", SqlDbType.VarChar, 50).Value =
+            string.IsNullOrWhiteSpace(data.ClassName) ? DBNull.Value : data.ClassName.Trim();
 
         command.Parameters.Add("@PROCESS", SqlDbType.VarChar, 10).Value = data.Process.Trim().ToUpperInvariant();
 
@@ -3534,6 +3580,8 @@ public class StackerSqlService
 
                 [FACTORY] varchar(50) NULL,
 
+                [CLASS] varchar(50) NULL,
+
                 [SRCPROCESS] varchar(10) NULL,
 
                 [GRADE] varchar(50) NULL,
@@ -3580,6 +3628,8 @@ public class StackerSqlService
 
                 DELETED.[Factory],
 
+                DELETED.[CLASS],
+
                 DELETED.[PROCESS],
 
                 DELETED.[GRADE],
@@ -3613,6 +3663,8 @@ public class StackerSqlService
                 [LEC],
 
                 [FACTORY],
+
+                [CLASS],
 
                 [SRCPROCESS],
 
@@ -3728,6 +3780,7 @@ public class StackerSqlService
                     [PRODUCTNAME] = Source.[PRODUCTNAME],
                     [LEC] = Source.[LEC],
                     [Factory] = Source.[FACTORY],
+                    [CLASS] = Source.[CLASS],
                     [PROCESS] = Source.[SRCPROCESS],
                     [GRADE] = Source.[GRADE],
                     [CAMVERSION] = Source.[CAMVERSION],
@@ -3739,13 +3792,13 @@ public class StackerSqlService
                 INSERT
                 (
                     [HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM],
-                    [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION],
+                    [PRODUCTNAME], [LEC], [Factory], [CLASS], [PROCESS], [GRADE], [CAMVERSION],
                     [JOB], [UPDATEBY], [UPDATETS], [STATUS]
                 )
                 VALUES
                 (
                     Source.[HOLDER], Source.[BOXNO], Source.[SHIPBOXNAME], CONVERT(int, Source.[QTY]), Source.[PARTNUM], Source.[PENNUM],
-                    Source.[PRODUCTNAME], Source.[LEC], Source.[FACTORY], Source.[SRCPROCESS], Source.[GRADE], Source.[CAMVERSION],
+                    Source.[PRODUCTNAME], Source.[LEC], Source.[FACTORY], Source.[CLASS], Source.[SRCPROCESS], Source.[GRADE], Source.[CAMVERSION],
                     Source.[JOB], Source.[UPDATEBY], Source.[UPDATETS], 'WITHDRAWN'
                 );
 
@@ -4264,6 +4317,7 @@ public class StackerSqlService
             [PRODUCTNAME] nchar(10) NULL,
             [LEC] varchar(50) NULL,
             [FACTORY] varchar(50) NULL,
+            [CLASS] varchar(50) NULL,
             [SRCPROCESS] varchar(10) NULL,
             [GRADE] varchar(50) NULL,
             [CAMVERSION] varchar(10) NULL,
@@ -4283,6 +4337,7 @@ public class StackerSqlService
             DELETED.[PRODUCTNAME],
             DELETED.[LEC],
             DELETED.[Factory],
+            DELETED.[CLASS],
             DELETED.[PROCESS],
             DELETED.[GRADE],
             DELETED.[CAMVERSION],
@@ -4292,7 +4347,7 @@ public class StackerSqlService
         INTO @DeletedAssignments
         (
             [HOLDER], [BOXNO], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM],
-            [PRODUCTNAME], [LEC], [FACTORY], [SRCPROCESS], [GRADE], [CAMVERSION],
+            [PRODUCTNAME], [LEC], [FACTORY], [CLASS], [SRCPROCESS], [GRADE], [CAMVERSION],
             [JOB], [UPDATEBY], [UPDATETS]
         )
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
@@ -4324,6 +4379,7 @@ public class StackerSqlService
                 [PRODUCTNAME] = Source.[PRODUCTNAME],
                 [LEC] = Source.[LEC],
                 [Factory] = Source.[FACTORY],
+                [CLASS] = Source.[CLASS],
                 [PROCESS] = Source.[SRCPROCESS],
                 [GRADE] = Source.[GRADE],
                 [CAMVERSION] = Source.[CAMVERSION],
@@ -4335,13 +4391,13 @@ public class StackerSqlService
             INSERT
             (
                 [HOLDER], [BOXNAME], [SHIPBOXNAME], [QTY], [PARTNUM], [PENNUM],
-                [PRODUCTNAME], [LEC], [Factory], [PROCESS], [GRADE], [CAMVERSION],
+                [PRODUCTNAME], [LEC], [Factory], [CLASS], [PROCESS], [GRADE], [CAMVERSION],
                 [JOB], [UPDATEBY], [UPDATETS], [STATUS]
             )
             VALUES
             (
                 Source.[HOLDER], Source.[BOXNO], Source.[SHIPBOXNAME], Source.[QTY], Source.[PARTNUM], Source.[PENNUM],
-                Source.[PRODUCTNAME], Source.[LEC], Source.[FACTORY], Source.[SRCPROCESS], Source.[GRADE], Source.[CAMVERSION],
+                Source.[PRODUCTNAME], Source.[LEC], Source.[FACTORY], Source.[CLASS], Source.[SRCPROCESS], Source.[GRADE], Source.[CAMVERSION],
                 Source.[JOB], Source.[UPDATEBY], Source.[UPDATETS], 'MOVED OUT TO RBF 2 OP'
             );
 
@@ -4499,7 +4555,9 @@ public class StackerSqlService
 
             HA.[PENNUM] AS PenNum,
 
-            HA.[LEC]
+            HA.[LEC],
+
+            HA.[CLASS]
 
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
 
@@ -4565,11 +4623,17 @@ public class StackerSqlService
 
                 ShipBox = Convert.ToString(reader["ShipBox"])?.Trim() ?? "",
 
-                InsertedOn = reader["InsertedOn"] is DBNull
+                InsertedOnDate = reader["InsertedOn"] is DBNull
 
                     ? ""
 
-                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd"),
+
+                InsertedOnTime = reader["InsertedOn"] is DBNull
+
+                    ? ""
+
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("HH:mm:ss"),
 
                 Quantity = reader["Quantity"] is DBNull
 
@@ -4583,7 +4647,9 @@ public class StackerSqlService
 
                 PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
 
-                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? ""
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? "",
+
+                ClassName = reader["CLASS"] is DBNull ? "" : Convert.ToString(reader["CLASS"])?.Trim() ?? ""
 
             });
 
@@ -4610,7 +4676,8 @@ public class StackerSqlService
             HA.[PRODUCTNAME] AS Model,
             HA.[PARTNUM] AS PartNum,
             HA.[PENNUM] AS PenNum,
-            HA.[LEC]
+            HA.[LEC],
+            HA.[CLASS]
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGN] HA
         WHERE UPPER(LTRIM(RTRIM(ISNULL(HA.[PROCESS], '')))) = @PROCESS
           AND CAST(HA.[UPDATETS] AS date) = CAST(GETDATE() AS date)
@@ -4644,16 +4711,20 @@ public class StackerSqlService
                 Grade = Convert.ToString(reader["Grade"])?.Trim() ?? "",
                 BlackBox = Convert.ToString(reader["BlackBox"])?.Trim() ?? "",
                 ShipBox = Convert.ToString(reader["ShipBox"])?.Trim() ?? "",
-                InsertedOn = reader["InsertedOn"] is DBNull
+                InsertedOnDate = reader["InsertedOn"] is DBNull
                     ? ""
-                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd"),
+                InsertedOnTime = reader["InsertedOn"] is DBNull
+                    ? ""
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("HH:mm:ss"),
                 Quantity = reader["Quantity"] is DBNull
                     ? 0
                     : Convert.ToInt32(reader["Quantity"]),
                 Model = Convert.ToString(reader["Model"])?.Trim() ?? "",
                 PartNum = Convert.ToString(reader["PartNum"])?.Trim() ?? "",
                 PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
-                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? ""
+                Lec = Convert.ToString(reader["LEC"])?.Trim() ?? "",
+                ClassName = reader["CLASS"] is DBNull ? "" : Convert.ToString(reader["CLASS"])?.Trim() ?? ""
             });
         }
 
@@ -4676,6 +4747,7 @@ public class StackerSqlService
             HAH.[PARTNUM] AS PartNum,
             HAH.[PENNUM] AS PenNum,
             HAH.[LEC],
+            HAH.[CLASS],
             HAH.[STATUS] AS Status
         FROM [BOXMANAGEMENT].[BOX].[HOLDER_ASSIGNHIST] HAH
         WHERE UPPER(LTRIM(RTRIM(ISNULL(HAH.[PROCESS], '')))) = @PROCESS
@@ -4706,9 +4778,12 @@ public class StackerSqlService
                 Grade = Convert.ToString(reader["Grade"])?.Trim() ?? "",
                 BlackBox = Convert.ToString(reader["BlackBox"])?.Trim() ?? "",
                 ShipBox = Convert.ToString(reader["ShipBox"])?.Trim() ?? "",
-                InsertedOn = reader["InsertedOn"] is DBNull
+                InsertedOnDate = reader["InsertedOn"] is DBNull
                     ? ""
-                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd HH:mm:ss"),
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("yyyy-MM-dd"),
+                InsertedOnTime = reader["InsertedOn"] is DBNull
+                    ? ""
+                    : Convert.ToDateTime(reader["InsertedOn"]).ToString("HH:mm:ss"),
                 Quantity = reader["Quantity"] is DBNull
                     ? 0
                     : Convert.ToInt32(reader["Quantity"]),
@@ -4716,6 +4791,7 @@ public class StackerSqlService
                 PartNum = Convert.ToString(reader["PartNum"])?.Trim() ?? "",
                 PenNum = Convert.ToString(reader["PenNum"])?.Trim() ?? "",
                 Lec = Convert.ToString(reader["LEC"])?.Trim() ?? "",
+                ClassName = reader["CLASS"] is DBNull ? "" : Convert.ToString(reader["CLASS"])?.Trim() ?? "",
                 Status = Convert.ToString(reader["Status"])?.Trim() ?? ""
             });
         }

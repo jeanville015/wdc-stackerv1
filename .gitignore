@@ -433,6 +433,10 @@ FodyWeavers.xsd
 **/bin/
 **/obj/
 
+# Frontend build output
+/WDC_STACKER.CLIENT/dist/
+/WDC_STACKER.CLIENT.FGI/dist/
+
 # Publish profiles
 **/Properties/PublishProfiles/
 
@@ -441,3 +445,4 @@ FodyWeavers.xsd
 .vs/
  
  
+/codex_tmp/pwd-verify-dist-20260825

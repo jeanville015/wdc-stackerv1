@@ -94,6 +94,7 @@ export interface BoxAssignment {
     ProductName: string;
     Factory: string;
     Lec: string;
+    ClassName: string;
     Partnum: string;
     Pennum: string;
     Status: string;

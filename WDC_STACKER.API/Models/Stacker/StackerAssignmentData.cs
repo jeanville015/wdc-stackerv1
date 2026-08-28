@@ -33,6 +33,7 @@
         public string? Lec { get; set; }
         public int? Qty { get; set; }
         public string Factory { get; set; } = string.Empty;
+        public string? ClassName { get; set; }
         public string ShipBoxName { get; set; } = string.Empty;
         public string Process { get; set; } = string.Empty;
         public string BinName { get; set; } = string.Empty;

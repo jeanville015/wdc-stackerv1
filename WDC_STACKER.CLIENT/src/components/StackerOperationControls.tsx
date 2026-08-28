@@ -1,111 +1,363 @@
-import { useState, type KeyboardEvent, type CSSProperties } from "react";
+import {
+    useEffect,
+    useRef,
+    useState,
+    type KeyboardEvent,
+} from "react";
 import { scanApi, assignApi } from "../api/stackerApi";
 import { useAuth } from "../context/useAuth";
 import type { BoxView } from "../types/stacker";
+import {
+    formatBoxName,
+    formatRackName,
+} from "../utils/nameTransformers";
 import { STACKER_PROCESS } from "../config/processConfig";
 
 interface StackerOperationControlsProps {
     onGridViewBoxesLoaded?: (boxes: BoxView[]) => void;
     onAssignedBoxConfirmed?: (boxNo: string) => void;
-    onSelectedTargetBoxChanged?: (box: BoxView | null, isExistingLocation?: boolean) => void;
+    onSelectedTargetBoxChanged?: (
+        box: BoxView | null,
+        isExistingLocation?: boolean
+    ) => void;
 }
 
 interface FeedbackState {
-    message: string;
-    type: "success" | "error" | "idle";
+    title: string;
+    message?: string;
+    hint?: string;
+    type: "success" | "error";
 }
 
-export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssignedBoxConfirmed, onSelectedTargetBoxChanged }: StackerOperationControlsProps) {
-    const { user } = useAuth(); 
+type OperationStage = "scan" | "assignment";
+
+interface OperationNoticeProps {
+    id: string;
+    feedback: FeedbackState;
+}
+
+function OperationNotice({
+    id,
+    feedback,
+}: OperationNoticeProps) {
+    const isError = feedback.type === "error";
+
+    return (
+        <div
+            id={id}
+            className={`operation-feedback is-${feedback.type}`}
+            role={isError ? "alert" : "status"}
+            aria-live={isError ? "assertive" : "polite"}
+            aria-atomic="true"
+        >
+            <i
+                className={
+                    isError
+                        ? "fa-solid fa-circle-exclamation"
+                        : "fa-solid fa-circle-check"
+                }
+                aria-hidden="true"
+            />
+
+            <div>
+                <strong>{feedback.title}</strong>
+
+                {feedback.message && (
+                    <span style={{ whiteSpace: "pre-line" }}>
+                        {feedback.message}
+                    </span>
+                )}
+
+                {feedback.hint && (
+                    <span className="operation-feedback-hint">
+                        {feedback.hint}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function StackerOperationControls({
+    onGridViewBoxesLoaded,
+    onAssignedBoxConfirmed,
+    onSelectedTargetBoxChanged,
+}: StackerOperationControlsProps) {
+    const { user } = useAuth();
+
     const [scanValue, setScanValue] = useState("");
     const [scanLoading, setScanLoading] = useState(false);
     const [assignLoading, setAssignLoading] = useState(false);
-    const [assignEnabled, setAssignEnabled] = useState(false);
-    const [suggestedTargetBox, setSuggestedTargetBox] = useState<BoxView | null>(null);
-    const [feedback, setFeedback] = useState<FeedbackState>({
-        message: "",
-        type: "idle",
-    });
-    const [assignedBoxMessage, setAssignedBoxMessage] = useState("");
 
-    const showFeedback = (message: string, type: "success" | "error") => {
-        setFeedback({ message, type });
-        setTimeout(() => setFeedback({ message: "", type: "idle" }), 3500);
+    const [suggestedTargetBox, setSuggestedTargetBox] =
+        useState<BoxView | null>(null);
+
+    const [validationFeedback, setValidationFeedback] =
+        useState<FeedbackState | null>(null);
+
+    const [assignmentFeedback, setAssignmentFeedback] =
+        useState<FeedbackState | null>(null);
+
+    const [activeStage, setActiveStage] =
+        useState<OperationStage>("scan");
+
+    const scanInputRef = useRef<HTMLInputElement>(null);
+    const refocusAfterAssignmentRef = useRef(false);
+
+    useEffect(() => {
+        if (
+            assignLoading ||
+            !refocusAfterAssignmentRef.current
+        ) {
+            return;
+        }
+
+        refocusAfterAssignmentRef.current = false;
+        scanInputRef.current?.focus();
+    }, [assignLoading]);
+
+    const canAssign = Boolean(suggestedTargetBox);
+
+    const getOperationStageClassName = (
+        stage: OperationStage,
+        feedback: FeedbackState | null
+    ) =>
+        [
+            "operation-section",
+            "operation-stage",
+            stage === "assignment"
+                ? "operation-assignment-section"
+                : "",
+            activeStage === stage ? "is-active" : "",
+            feedback?.type === "success"
+                ? "is-complete"
+                : "",
+            feedback?.type === "error"
+                ? "has-error"
+                : "",
+        ]
+            .filter(Boolean)
+            .join(" ");
+
+    const renderOperationStageMarker = (
+        stepNumber: 1 | 2,
+        feedback: FeedbackState | null
+    ) => {
+        if (feedback?.type === "success") {
+            return (
+                <i
+                    className="fa-solid fa-check"
+                    aria-hidden="true"
+                />
+            );
+        }
+
+        if (feedback?.type === "error") {
+            return (
+                <i
+                    className="fa-solid fa-exclamation"
+                    aria-hidden="true"
+                />
+            );
+        }
+
+        return <span>{stepNumber}</span>;
     };
+
+    const clearSuggestedTarget = () => {
+        setSuggestedTargetBox(null);
+        onSelectedTargetBoxChanged?.(null, false);
+    };
+
+    const showValidationFailure = (message: string) => {
+        setActiveStage("scan");
+        clearSuggestedTarget();
+
+        setValidationFeedback({
+            title: "Validation failed",
+            message,
+            type: "error",
+        });
+    };
+
+    const showAssignmentFailure = (
+        message: string,
+        hint?: string
+    ) => {
+        setActiveStage("assignment");
+
+        setAssignmentFeedback({
+            title: "Assignment failed",
+            message,
+            hint,
+            type: "error",
+        });
+    };
+
+    const validateDisabled =
+        scanLoading ||
+        assignLoading ||
+        !scanValue.trim();
+
+    const assignDisabled =
+        scanLoading ||
+        assignLoading ||
+        !canAssign;
 
     const handleScan = async () => {
         const holder = scanValue.trim();
 
-        if (!holder) return;
+        setActiveStage("scan");
+        setValidationFeedback(null);
+        setAssignmentFeedback(null);
+        clearSuggestedTarget();
+
+        if (!holder) {
+            showValidationFailure("Holder is required.");
+            return;
+        }
 
         if (!user?.token) {
-            setAssignEnabled(false);
-            setSuggestedTargetBox(null);
-            onSelectedTargetBoxChanged?.(null, false);
-            showFeedback("Login token is missing. Please sign in again.", "error");
+            showValidationFailure(
+                "Login token is missing. Please sign in again."
+            );
             return;
         }
 
         setScanLoading(true);
-        setAssignEnabled(false);
-        setSuggestedTargetBox(null);
-        onSelectedTargetBoxChanged?.(null, false);
 
         try {
-            const result = await scanApi(holder, user.token);
+            const result = await scanApi(
+                holder,
+                user.token
+            );
+
             const boxes = result.GridViewBoxes ?? [];
-            const suggestedTarget = boxes.find((box) => box.IsSuggestedTarget) ?? null;
 
             onGridViewBoxesLoaded?.(boxes);
 
-            if (result.Success && result.CanAssign && suggestedTarget) {
+            const suggestedTarget =
+                boxes.find(
+                    (box) => box.IsSuggestedTarget
+                ) ?? null;
+
+            if (
+                result.Success &&
+                result.CanAssign &&
+                suggestedTarget
+            ) {
                 setSuggestedTargetBox(suggestedTarget);
-                onSelectedTargetBoxChanged?.(suggestedTarget, false);
-                setAssignEnabled(true);
-                showFeedback(result.Message || "Validation Pass!", "success");
-            } else {
-                // Holder may already be assigned - locate and highlight its
-                // existing box in the rack without enabling assignment.
-                const existingBox = boxes.find((box) => box.IsSuggestedTarget) ?? null;
-                onSelectedTargetBoxChanged?.(existingBox, true);
-                setAssignEnabled(false);
-                showFeedback(result.Message || "Validation failed.", "error");
+
+                onSelectedTargetBoxChanged?.(
+                    suggestedTarget,
+                    false
+                );
+
+                setValidationFeedback({
+                    title: "Validation Pass!",
+                    message:
+                        `Holder will be assigned to:\n` +
+                        `RACK: ${formatRackName(
+                            suggestedTarget.RackNum
+                        )}\n` +
+                        `BOX: ${formatBoxName(
+                            suggestedTarget.BoxNo,
+                            suggestedTarget.RackNum
+                        )}`,
+                    hint: "Click ASSIGN to continue",
+                    type: "success",
+                });
+
+                setActiveStage("assignment");
+                return;
             }
+
+            /*
+             * When the holder is already assigned, the API may
+             * return its current box as IsSuggestedTarget.
+             * Highlight that location without enabling Assign.
+             */
+            const existingBox =
+                boxes.find(
+                    (box) => box.IsSuggestedTarget
+                ) ?? null;
+
+            setSuggestedTargetBox(null);
+
+            onSelectedTargetBoxChanged?.(
+                existingBox,
+                true
+            );
+
+            setActiveStage("scan");
+
+            setValidationFeedback({
+                title: "Validation failed",
+                message:
+                    result.Message ||
+                    `Holder ${holder} could not be validated.`,
+                type: "error",
+            });
         } catch (err) {
-            setAssignEnabled(false);
-            showFeedback(err instanceof Error ? err.message : "Scan error.", "error");
+            showValidationFailure(
+                err instanceof Error
+                    ? err.message
+                    : "Unable to validate the holder."
+            );
         } finally {
             setScanLoading(false);
         }
     };
 
-    const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            handleScan();
+    const handleKeyDown = (
+        event: KeyboardEvent<HTMLInputElement>
+    ) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            void handleScan();
         }
     };
 
     const handleAssign = async () => {
         const holder = scanValue.trim();
-        
+
+        setActiveStage("assignment");
+        setAssignmentFeedback(null);
 
         if (!holder) {
-            showFeedback("Holder is required.", "error");
+            showAssignmentFailure(
+                "Holder is required."
+            );
             return;
         }
 
         if (!user?.token) {
-            showFeedback("Login token is missing. Please sign in again.", "error");
+            showAssignmentFailure(
+                "Login token is missing. Please sign in again."
+            );
             return;
         }
 
         if (!suggestedTargetBox) {
-            showFeedback("No suggested target box was found.", "error");
+            showAssignmentFailure(
+                "Please validate the holder first."
+            );
             return;
         }
 
-        const assignedBoxNo = suggestedTargetBox.BoxNo;
+        const assignedBoxNo =
+            suggestedTargetBox.BoxNo;
+
+        const displayRackName =
+            formatRackName(
+                suggestedTargetBox.RackNum
+            );
+
+        const displayBoxName =
+            formatBoxName(
+                suggestedTargetBox.BoxNo,
+                suggestedTargetBox.RackNum
+            );
 
         setAssignLoading(true);
 
@@ -114,250 +366,247 @@ export default function StackerOperationControls({ onGridViewBoxesLoaded, onAssi
                 {
                     Holder: holder,
                     BoxNo: suggestedTargetBox.BoxNo,
-                    RackNum: suggestedTargetBox.RackNum,
-                    LayerRowNum: suggestedTargetBox.LayerRowNum,
-                    LayerColNum: suggestedTargetBox.LayerColNum,
+                    RackNum:
+                        suggestedTargetBox.RackNum,
+                    LayerRowNum:
+                        suggestedTargetBox.LayerRowNum,
+                    LayerColNum:
+                        suggestedTargetBox.LayerColNum,
                     Process: STACKER_PROCESS,
                 },
                 user.token
             );
 
-            if (result.GridViewBoxes) {
-                onGridViewBoxesLoaded?.(result.GridViewBoxes);
+            if (!result.Success) {
+                showAssignmentFailure(
+                    result.Message ||
+                    "Unable to assign the holder.",
+                    "Validate again to refresh the target."
+                );
+                return;
             }
 
-            showFeedback(
-                result.Message || (result.Success ? "Assign successful." : "Unable to Assign."),
-                result.Success ? "success" : "error"
+            if (result.GridViewBoxes) {
+                onGridViewBoxesLoaded?.(
+                    result.GridViewBoxes
+                );
+            }
+
+            setValidationFeedback(null);
+
+            setAssignmentFeedback({
+                title: "Assignment complete",
+                message:
+                    `Holder was assigned to:\n` +
+                    `RACK: ${displayRackName}\n` +
+                    `BOX: ${displayBoxName}`,
+                type: "success",
+            });
+
+            /*
+             * Assignment is complete, so make the Scan stage
+             * active again and return focus to the scan input.
+             */
+            setActiveStage("scan");
+            refocusAfterAssignmentRef.current = true;
+
+            onAssignedBoxConfirmed?.(
+                assignedBoxNo
             );
 
-            if (result.Success) {
-                onAssignedBoxConfirmed?.(assignedBoxNo);
-                setAssignedBoxMessage(`Holder was assigned to ${assignedBoxNo}`);
-                setScanValue("");
-                setAssignEnabled(false);
-                setSuggestedTargetBox(null);
-                onSelectedTargetBoxChanged?.(null, false);
-            }
+            setScanValue("");
+            clearSuggestedTarget();
         } catch (err) {
-            showFeedback(
-                err instanceof Error ? err.message : "Assign error.",
-                "error"
+            showAssignmentFailure(
+                err instanceof Error
+                    ? err.message
+                    : "Unable to assign the holder.",
+                "Validate again to refresh the target."
             );
         } finally {
             setAssignLoading(false);
         }
     };
 
-    const feedbackStyle: CSSProperties =
-        feedback.type === "success"
-            ? {
-                background: "rgba(0,82,204,0.07)",
-                borderLeft: "3px solid #0052cc",
-                color: "#0052cc",
-            }
-            : feedback.type === "error"
-                ? {
-                    background: "rgba(210,50,50,0.07)",
-                    borderLeft: "3px solid #d23232",
-                    color: "#d23232",
-                }
-                : {};
+    const validationHasError =
+        validationFeedback?.type === "error";
 
     return (
         <aside
-            style={{
-                width: "100%",
-                maxWidth: "280px",
-                minWidth: 0,
-                boxSizing: "border-box",
-                alignSelf: "start",
-                position: "sticky",
-                top: "0",
-                zIndex: 5,
-                background: "#ffffff",
-                border: "1px solid #dde1e9",
-                borderRadius: "14px",
-                display: "flex",
-                flexDirection: "column",
-                padding: "1rem 1rem",
-                gap: "1.5rem",
-            }}
-        > 
-
-            <h2
-                className="fw-bold mb-0"
-                style={{
-                    fontSize: "0.95rem",
-                    color: "#172b4d",
-                }}
-            >
+            className="stacker-operation-controls"
+            aria-label="Scanning and assignment controls"
+        >
+            <h2 className="operation-panel-title">
                 Scanning / Assignment
             </h2>
 
-            <div
-                style={{
-                    background: "#f4f5f7",
-                    border: "1px solid #dde1e9",
-                    borderRadius: "10px",
-                    padding: "1rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.75rem",
-                }}
+            <section
+                className={getOperationStageClassName(
+                    "scan",
+                    validationFeedback
+                )}
             >
-                <label
-                    htmlFor="scan-input"
-                    className="fw-semibold mb-0"
-                    style={{
-                        fontSize: "0.72rem",
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        color: "#172b4d",
-                    }}
-                >
-                    Scan Holder
-                </label>
-
-                <input
-                    id="scan-input"
-                    type="text"
-                    className="form-control"
-                    placeholder="Scan Holder Number..."
-                    value={scanValue}
-                    onChange={(e) => {
-                        setScanValue(e.target.value);
-                        setAssignEnabled(false);
-                        setSuggestedTargetBox(null);
-                        setAssignedBoxMessage("");
-                        onSelectedTargetBoxChanged?.(null, false);
-                    }}
-                    onKeyDown={handleKeyDown}
-                    disabled={scanLoading}
-                    style={{
-                        border: "1.5px solid #dde1e9",
-                        borderRadius: "7px",
-                        color: "#172b4d",
-                        fontSize: "0.88rem",
-                        padding: "0.55rem 0.8rem",
-                        background: "#ffffff",
-                    }}
-                />
-
-                <button
-                    className="btn w-100 fw-bold"
-                    onClick={handleScan}
-                    disabled={scanLoading || !scanValue.trim()}
-                    style={{
-                        background: scanLoading || !scanValue.trim()
-                            ? "#a0b4d6"
-                            : "linear-gradient(90deg, #0052cc 0%, #0065ff 100%)",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: "7px",
-                        padding: "0.55rem",
-                        fontSize: "0.78rem",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        boxShadow: scanLoading || !scanValue.trim()
-                            ? "none"
-                            : "0 3px 10px rgba(0,82,204,0.25)",
-                        transition: "all 0.15s",
-                    }}
-                >
-                    {scanLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm me-2"
-                                role="status"
-                                aria-hidden="true"
-                            />
-                            validating...
-                        </>
-                    ) : (
-                        "Validate"
-                    )}
-                </button>
-            </div>
-
-            <div>
-                <p
-                    className="fw-semibold mb-2"
-                    style={{
-                        fontSize: "0.72rem",
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        color: "#172b4d",
-                    }}
-                >
-                    Assignment
-                </p>
-
-                <button
-                    className="btn w-100 fw-bold"
-                    onClick={handleAssign}
-                    disabled={assignLoading || !assignEnabled}
-                    style={{
-                        background: assignLoading || !assignEnabled
-                            ? "#a0b4d6"
-                            : "linear-gradient(90deg, #003d99 0%, #0052cc 100%)",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: "7px",
-                        padding: "0.6rem",
-                        fontSize: "0.78rem",
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        boxShadow: assignLoading || !assignEnabled
-                            ? "none"
-                            : "0 3px 10px rgba(0,61,153,0.25)",
-                        transition: "all 0.15s",
-                    }}
-                >
-                    {assignLoading ? (
-                        <>
-                            <span
-                                className="spinner-border spinner-border-sm me-2"
-                                role="status"
-                                aria-hidden="true"
-                            />
-                            Assigning...
-                        </>
-                    ) : (
-                        "Assign"
-                    )}
-                </button>
-            </div>
-
-            {assignedBoxMessage && (
                 <div
-                    className="px-3 py-2"
-                    style={{
-                        background: "rgba(0,82,204,0.07)",
-                        borderLeft: "3px solid #0052cc",
-                        color: "#0052cc",
-                        borderRadius: "0 7px 7px 0",
-                        fontSize: "0.78rem",
-                        lineHeight: 1.5,
-                    }}
+                    className="operation-stage-marker"
+                    aria-hidden="true"
                 >
-                    {assignedBoxMessage}
+                    {renderOperationStageMarker(
+                        1,
+                        validationFeedback
+                    )}
                 </div>
-            )}
 
-            {feedback.type !== "idle" && (
-                <div
-                    className="px-3 py-2"
-                    style={{
-                        ...feedbackStyle,
-                        borderRadius: "0 7px 7px 0",
-                        fontSize: "0.78rem",
-                        lineHeight: 1.5,
-                    }}
-                >
-                    {feedback.message}
+                <div className="operation-stage-content">
+                    <label
+                        htmlFor="scan-input"
+                        className="operation-field-label"
+                    >
+                        Scan Holder
+                    </label>
+
+                    <div
+                        className={[
+                            "operation-scan-field",
+                            validationHasError
+                                ? "is-error"
+                                : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        <input
+                            ref={scanInputRef}
+                            id="scan-input"
+                            type="text"
+                            className="form-control"
+                            placeholder="Scan Holder No..."
+                            value={scanValue}
+                            autoFocus
+                            autoComplete="off"
+                            onFocus={() =>
+                                setActiveStage("scan")
+                            }
+                            aria-invalid={
+                                validationHasError
+                            }
+                            aria-describedby={
+                                validationFeedback
+                                    ? "validation-feedback"
+                                    : undefined
+                            }
+                            onChange={(event) => {
+                                setActiveStage("scan");
+                                setScanValue(
+                                    event.target.value
+                                );
+                                clearSuggestedTarget();
+                                setValidationFeedback(
+                                    null
+                                );
+                                setAssignmentFeedback(
+                                    null
+                                );
+                            }}
+                            onKeyDown={handleKeyDown}
+                            disabled={
+                                scanLoading ||
+                                assignLoading
+                            }
+                        />
+
+                        <span
+                            className="operation-barcode-icon"
+                            aria-hidden="true"
+                        >
+                            <i className="fa-solid fa-barcode" />
+                        </span>
+                    </div>
+
+                    <button
+                        type="button"
+                        className="btn operation-primary-button"
+                        onClick={handleScan}
+                        disabled={validateDisabled}
+                    >
+                        {scanLoading ? (
+                            <>
+                                <span
+                                    className="spinner-border spinner-border-sm"
+                                    aria-hidden="true"
+                                />
+                                Validating...
+                            </>
+                        ) : (
+                            "Validate"
+                        )}
+                    </button>
+
+                    {validationFeedback && (
+                        <OperationNotice
+                            id="validation-feedback"
+                            feedback={
+                                validationFeedback
+                            }
+                        />
+                    )}
                 </div>
-            )}
+            </section>
+
+            <section
+                className={getOperationStageClassName(
+                    "assignment",
+                    assignmentFeedback
+                )}
+            >
+                <div
+                    className="operation-stage-marker"
+                    aria-hidden="true"
+                >
+                    {renderOperationStageMarker(
+                        2,
+                        assignmentFeedback
+                    )}
+                </div>
+
+                <div className="operation-stage-content">
+                    <h3 className="operation-section-title">
+                        Assignment
+                    </h3>
+
+                    <button
+                        type="button"
+                        className="btn operation-primary-button"
+                        onClick={handleAssign}
+                        disabled={assignDisabled}
+                    >
+                        {assignLoading ? (
+                            <>
+                                <span
+                                    className="spinner-border spinner-border-sm"
+                                    aria-hidden="true"
+                                />
+                                Assigning...
+                            </>
+                        ) : (
+                            "Assign"
+                        )}
+                    </button>
+
+                    {assignmentFeedback ? (
+                        <OperationNotice
+                            id="assignment-feedback"
+                            feedback={
+                                assignmentFeedback
+                            }
+                        />
+                    ) : (
+                        <p className="operation-helper-text">
+                            Assign the validated holder to
+                            the recommended destination.
+                        </p>
+                    )}
+                </div>
+            </section>
         </aside>
     );
 }

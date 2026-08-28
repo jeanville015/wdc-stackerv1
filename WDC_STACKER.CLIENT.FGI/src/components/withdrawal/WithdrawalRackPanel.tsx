@@ -338,6 +338,14 @@ export default function WithdrawalRackPanel({
 
                                     return (
                                         <button
+                                            className={[
+                                                "rack-box-cell",
+                                                hasShipBoxes
+                                                    ? "rack-box-cell--interactive"
+                                                    : "",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ")}
                                             type="button"
                                             key={`withdrawal-${layerNumber}-${columnNumber}`}
                                             disabled={!hasShipBoxes}
@@ -388,6 +396,15 @@ export default function WithdrawalRackPanel({
                                                     {heldHolders.length > 0 && (
                                                         <span className="rack-box-in-site-hold-badge">
                                                             IN-SITE
+                                                        </span>
+                                                    )}
+
+                                                    {hasShipBoxes && (
+                                                        <span
+                                                            className="rack-box-hover-action"
+                                                            aria-hidden="true"
+                                                        >
+                                                            <i className="fa-solid fa-chevron-right" />
                                                         </span>
                                                     )}
                                                 </>

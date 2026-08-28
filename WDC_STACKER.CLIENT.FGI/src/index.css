@@ -1903,6 +1903,60 @@ code {
     white-space: nowrap;
 }
 
+.rack-box-cell {
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    transition:
+        outline-color 140ms ease,
+        box-shadow 140ms ease;
+}
+
+.rack-box-cell--interactive:hover,
+.rack-box-cell--interactive:focus-visible {
+    outline-color: #0c66e4;
+}
+
+/*
+ * Apply the soft blue hover ring only to normal populated boxes.
+ * This prevents the hover shadow from replacing the amber target
+ * or green recently-assigned visual state.
+ */
+.rack-box-cell--interactive:hover:not(.rack-box-cell--target):not(.rack-box-cell--recently-assigned),
+.rack-box-cell--interactive:focus-visible:not(.rack-box-cell--target):not(.rack-box-cell--recently-assigned) {
+    box-shadow:
+        0 0 0 3px rgba(12, 102, 228, 0.12),
+        0 4px 12px rgba(23, 43, 77, 0.12) !important;
+}
+
+.rack-box-hover-action {
+    position: absolute;
+    right: 0.55rem;
+    bottom: 0.5rem;
+    z-index: 7;
+    display: inline-flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #0c66e4;
+    box-shadow: 0 2px 5px rgba(12, 102, 228, 0.28);
+    color: #ffffff;
+    font-size: 0.62rem;
+    opacity: 0;
+    transform: scale(0.86);
+    transition:
+        opacity 140ms ease,
+        transform 140ms ease;
+    pointer-events: none;
+}
+
+.rack-box-cell--interactive:hover .rack-box-hover-action,
+.rack-box-cell--interactive:focus-visible .rack-box-hover-action {
+    opacity: 1;
+    transform: scale(1);
+}
+
 .rack-box-in-site-hold-badge {
     position: absolute;
     top: 0.35rem;
@@ -3431,3 +3485,135 @@ tr.box-assignment-row--held > td {
     }
 }
 
+/* Rack View toolbar */
+.rack-view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  background: #f5f8fc;
+  border: 1px solid #d8e1ed;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(23, 43, 77, 0.06);
+}
+
+.rack-view-toolbar-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 0.7rem;
+}
+
+.rack-view-toolbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  color: #0052cc;
+  background: #eaf3ff;
+  border: 1px solid #b9d4ff;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.rack-view-toolbar-title {
+  margin: 0;
+  color: #172b4d;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.rack-view-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rack-view-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 36px;
+  padding: 0.42rem 0.8rem;
+  color: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  box-shadow: 0 1px 2px rgba(23, 43, 77, 0.12);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.rack-view-toolbar-button--refresh {
+  background: #28a745;
+  border-color: #23923c;
+}
+
+.rack-view-toolbar-button--refresh:hover:not(:disabled) {
+  color: #ffffff;
+  background: #218838;
+  border-color: #1e7e34;
+}
+
+.rack-view-toolbar-button--hold {
+  background: #ff8b00;
+  border-color: #e67d00;
+}
+
+.rack-view-toolbar-button--hold:hover:not(:disabled) {
+  color: #ffffff;
+  background: #e67d00;
+  border-color: #cc7000;
+}
+
+.rack-view-toolbar-button--csv {
+  background: #0052cc;
+  border-color: #0047b3;
+}
+
+.rack-view-toolbar-button--csv:hover:not(:disabled) {
+  color: #ffffff;
+  background: #0747a6;
+  border-color: #063d91;
+}
+
+.rack-view-toolbar-button:hover:not(:disabled) {
+  box-shadow: 0 3px 8px rgba(23, 43, 77, 0.18);
+  transform: translateY(-1px);
+}
+
+.rack-view-toolbar-button:focus-visible {
+  outline: 3px solid rgba(0, 82, 204, 0.24);
+  outline-offset: 2px;
+}
+
+.rack-view-toolbar-button:disabled {
+  color: #ffffff;
+  background: #a0b4d6;
+  border-color: #a0b4d6;
+  box-shadow: none;
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 720px) {
+  .rack-view-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rack-view-toolbar-actions {
+    justify-content: flex-start;
+  }
+}

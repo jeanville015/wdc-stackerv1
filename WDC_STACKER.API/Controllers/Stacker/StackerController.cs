@@ -641,7 +641,7 @@ namespace WDC_STACKER.API.Controllers.Stacker
 
         private void AppendCsvTable(System.Text.StringBuilder csv, string title, List<WDC_STACKER.API.Models.Stacker.CsvExportRow> data, bool includeStatus)
         {
-            var headers = new List<string> { "Holder", "Job", "Qty", "Grade", "Position", "InsertedOn", "Quantity", "Model", "PartNum", "PenNum", "Lec" };
+            var headers = new List<string> { "Holder", "Job", "Qty", "Grade", "Position", "InsertedOn Date", "InsertedOn Time", "Quantity", "Model", "PartNum", "PenNum", "Lec", "Class" };
             if (includeStatus)
             {
                 headers.Add("Status");
@@ -659,12 +659,14 @@ namespace WDC_STACKER.API.Controllers.Stacker
                     row.Qty.ToString(),
                     EscapeCsvField(row.Grade),
                     EscapeCsvField(FormatPosition(row.BlackBox, row.ShipBox)),
-                    EscapeCsvField(row.InsertedOn),
+                    EscapeCsvField(row.InsertedOnDate),
+                    EscapeCsvField(row.InsertedOnTime),
                     row.Quantity.ToString(),
                     EscapeCsvField(row.Model),
                     EscapeCsvField(row.PartNum),
                     EscapeCsvField(row.PenNum),
-                    EscapeCsvField(row.Lec)
+                    EscapeCsvField(row.Lec),
+                    EscapeCsvField(row.ClassName)
                 };
                 if (includeStatus)
                 {

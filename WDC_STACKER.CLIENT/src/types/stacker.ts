@@ -20,6 +20,10 @@ export interface BoxView {
     BoxListPercentage: number;
     IsSuggestedTarget: boolean;
     HasReleaseStatus: boolean;
+    /** Positions follow the assignment modal's UPDATETS/HOLDER ordering. */
+    ReleaseHolderPositions?: number[]; 
+    /** Positions follow the assignment modal's UPDATETS/HOLDER ordering. */
+    HeldHolderPositions?: number[];
 }
 /** ---------------------------------- */
 

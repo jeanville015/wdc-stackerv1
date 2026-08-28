@@ -1496,7 +1496,8 @@ namespace WDC_STACKER.API.Aggregate
                 "Job",
                 "SliderCount",
                 "HoldReason",
-                "HoldComment"
+                "HoldComment",
+                "ClassName"
             };
 
             if (isFgi)
@@ -1579,6 +1580,7 @@ namespace WDC_STACKER.API.Aggregate
             var sliderCount = GetField(row, "SliderCount");
             var holdReason = GetField(row, "HoldReason");
             var holdComment = GetField(row, "HoldComment");
+            var className = GetField(row, "ClassName");
             string? lecValue;
             int? holderQty = null;
 
@@ -1724,6 +1726,7 @@ namespace WDC_STACKER.API.Aggregate
                 ProductName = productName,
                 Lec = lecValue,
                 Factory = buildCode,
+                ClassName = className,
                 Process = process,
                 BinName = binName,
                 CamVersion = isFgi ? camVersion : null,
@@ -3595,31 +3598,12 @@ namespace WDC_STACKER.API.Aggregate
 
             var holdReasonCode = GetField(row, "HoldReason");
             var holdComment = GetField(row, "HoldComment");
+            // Temp variable: whether the holder is currently on hold. The disassociate
+            // button is only clickable for holders on hold today, so this is expected
+            // to be true, but it is determined explicitly (not assumed) here since it
+            // also drives the RoutingCode AttributeValue used in STEP 4 below.
             var hasHold = !string.IsNullOrWhiteSpace(holdReasonCode) || !string.IsNullOrWhiteSpace(holdComment);
             //-- STEP 1: QUERY HOLDER HOLD INFO: END -------------------------------------//
-
-            if (!hasHold)
-            {
-                //-- NO ACTIVE HOLD FOUND: clear STATUS instead of deleting the row --------\\
-                var statusCleared = await _stackerSqlService.ClearFgiHolderAssignmentStatusAsync(holder, process);
-                if (!statusCleared)
-                {
-                    _logger.LogWarning(
-                        "[FGI DISASSOCIATE] Unable to clear HOLDER_ASSIGN status for holder={Holder}, process={Process}",
-                        holder,
-                        process);
-                }
-
-                _previewCache.Clear();
-
-                var noHoldGridView = await MapGridViewBoxData(clientKey);
-
-                return (
-                    true,
-                    $"{holder} has no active FEATS hold. Status cleared instead of disassociating.",
-                    noHoldGridView.Boxes
-                );
-            }
 
             //-- STEP 2: RELEASE HOLDER: START --------------------------------------------\\
             var releaseResult = await ReleaseHolderWithRetryAsync(
@@ -3670,6 +3654,39 @@ namespace WDC_STACKER.API.Aggregate
                 );
             }
             //-- STEP 3: MOVE TO RBF2 OPERATION: END ---------------------------------------//
+
+            //-- STEP 4: SET CONTAINER ATTRIBUTES (ROUTING CODE): START --------------------\\
+            var routingCodeAttributeValue = hasHold
+                ? "735575"
+                : "735570";
+
+            (bool Success, string Message) setContainerAttributesResult;
+            try
+            {
+                setContainerAttributesResult = await _featsService.SetContainerAttributesAsync(
+                    holder: holder,
+                    holderType: null,
+                    attributeName: "RoutingCode",
+                    attributeValue: routingCodeAttributeValue,
+                    username: credentials.Username,
+                    password: credentials.Password,
+                    camVersion: camVersion);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[FGI DISASSOCIATE] SetContainerAttributes(RoutingCode={RoutingCodeAttributeValue}) threw for holder={Holder}", routingCodeAttributeValue, holder);
+                setContainerAttributesResult = (false, $"SetContainerAttributes threw an exception: {FeatsService.ExtractCleanErrorMessage(ex)}");
+            }
+
+            if (!setContainerAttributesResult.Success)
+            {
+                return (
+                    false,
+                    $"MoveOut to {rbf2Operation} succeeded, but SetContainerAttributes(RoutingCode={routingCodeAttributeValue}) failed: {setContainerAttributesResult.Message}",
+                    new List<BoxView>()
+                );
+            }
+            //-- STEP 4: SET CONTAINER ATTRIBUTES (ROUTING CODE): END -----------------------//
 
             //-- SQL DELETE for HOLDER_ASSIGN: START----------------------------------------\\
             var deleted = await _stackerSqlService.DeleteFgiHoldHolderAssignmentAsync(holder, process);

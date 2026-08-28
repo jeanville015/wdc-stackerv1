@@ -421,6 +421,16 @@ export default function RackPanel({
 
                                 return (
                                     <button
+                                        className={[
+                                            "rack-box-cell",
+                                            hasShipBoxes ? "rack-box-cell--interactive" : "",
+                                            isSelectedTarget ? "rack-box-cell--target" : "",
+                                            isRecentlyAssigned
+                                                ? "rack-box-cell--recently-assigned"
+                                                : "",
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
                                         type="button"
                                         key={`rack-${rackNumber}-layer-${layerNumber}-box-${columnNumber}`}
                                         disabled={!hasShipBoxes}
@@ -441,8 +451,6 @@ export default function RackPanel({
                                                             ? `2px solid ${TARGET_AMBER}`
                                                             : "1px solid #d9e2ef",
                                                     padding: "0.5rem",
-                                                    outline: "none",
-                                                    outlineOffset: "0",
                                                     overflow:
                                                         isSelectedTarget || isRecentlyAssigned
                                                             ? "visible"
@@ -536,6 +544,15 @@ export default function RackPanel({
                                                         }}
                                                     >
                                                         Assigned
+                                                    </span>
+                                                )}
+
+                                                {hasShipBoxes && (
+                                                    <span
+                                                        className="rack-box-hover-action"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <i className="fa-solid fa-chevron-right" />
                                                     </span>
                                                 )}
                                             </>

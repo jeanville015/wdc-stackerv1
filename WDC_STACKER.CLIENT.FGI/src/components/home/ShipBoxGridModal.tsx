@@ -274,6 +274,11 @@ export default function ShipBoxGridModal({
                                     <strong>PenNum:</strong>
                                     {box.PenNum}
                                 </span>
+
+                                <span>
+                                    <strong>CAM:</strong>
+                                    {box.CamVersion ? `${box.CamVersion}` : "—"}
+                                </span>
                             </div>
                         </div>
 
@@ -449,6 +454,7 @@ export default function ShipBoxGridModal({
                                 productName={box.ProductName}
                                 partNum={box.PartNum}
                                 penNum={box.PenNum}
+                                camVersion={box.CamVersion}
                                 onClose={() => setSelectedShipBox(null)}
                                 onDisassociateSuccess={onDisassociateSuccess}
                             />

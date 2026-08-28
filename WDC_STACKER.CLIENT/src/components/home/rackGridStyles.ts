@@ -1,9 +1,7 @@
 import type { CSSProperties } from "react";
 import type { BoxView } from "../../types/stacker";
 
-const GREY_TONE = "#e8e8e8";
-const BLUE_LIGHT = "#cfe3ff";
-const GREEN_LIGHT = "#d8f3df";
+const GREY_TONE = "#e8e8e8"; 
 
 export const TARGET_AMBER = "#f5a300";
 export const TARGET_AMBER_DARK = "#b66a00";
@@ -86,6 +84,21 @@ export const rackGridStyle = (boxCount: number, layerCount: number): CSSProperti
     alignItems: "stretch",
 });
 
+export const rackOverviewGridStyle = (boxCount: number, layerCount: number, minimumBoxWidth = 230, minimumBoxHeight = 124): CSSProperties =>
+({
+    display: "grid",
+    gridTemplateColumns:
+        `52px repeat(${boxCount}, minmax(${minimumBoxWidth}px, 1fr))`,
+    gridTemplateRows:
+        `repeat(${layerCount}, minmax(${minimumBoxHeight}px, auto))`,
+    columnGap: "8px",
+    rowGap: "28px",
+    width: "100%",
+    minWidth:
+        `${52 + boxCount * (minimumBoxWidth + 8)}px`,
+    alignItems: "stretch",
+});
+
 export const cornerCellStyle: CSSProperties = {
     background: "transparent",
 };
@@ -112,7 +125,7 @@ export const getEmptyCellStyle = (): CSSProperties => {
 };
 
 export const getMappedCellStyle = (
-    box: BoxView,
+    _box: BoxView,
     isRecentlyAssigned = false,
     isTarget = false
 ): CSSProperties => {
@@ -120,27 +133,29 @@ export const getMappedCellStyle = (
 
     return {
         ...baseCellStyle,
+        minHeight: "124px",
+        alignItems: "stretch",
+        justifyContent: "stretch",
+        padding: "0.9rem",
         background: isRecentlyAssigned
-            ? "#d8f3df"
+            ? "#edf8f0"
             : isTarget
                 ? TARGET_AMBER_TINT
-                : box.HasReleaseStatus
-                    ? GREEN_LIGHT
-                    : BLUE_LIGHT,
+                : "#ffffff",
         border: isRecentlyAssigned
-            ? "2px solid #16833a"
+            ? "3px solid #16833a"
             : isTarget
                 ? `2px solid ${TARGET_AMBER_DARK}`
-                : "1px solid #8bbcff",
-        padding: "0.25rem",
-        outline: "none",
-        outlineOffset: "0",
+                : "1px solid #0d6efd",
+        textAlign: "left",
         overflow: isHighlighted ? "visible" : "hidden",
-        animation: isRecentlyAssigned ? "assignedBoxPulse 0.9s ease-out infinite" : undefined,
+        animation: isRecentlyAssigned
+            ? "assignedBoxPulse 0.9s ease-out infinite"
+            : undefined,
         boxShadow: isRecentlyAssigned
-            ? "inset 0 1px 0 rgba(255,255,255,0.85), 0 4px 12px rgba(22,131,58,0.35)"
+            ? "0 4px 12px rgba(22,131,58,0.35)"
             : isTarget
-                ? `inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(245,163,0,0.25), 0 4px 10px rgba(245,163,0,0.3)`
-                : "inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(23,43,77,0.06)",
+                ? "0 5px 14px rgba(245,163,0,0.25)"
+                : "0 1px 3px rgba(23,43,77,0.08)",
     };
 };

@@ -4,12 +4,10 @@ import SegmentedBox from "./SegmentedBox";
 import type { BoxView } from "../../types/stacker";
 import { formatRackName } from "../../utils/nameTransformers";
 import {
-    columnLabelCellStyle,
-    cornerCellStyle,
     getMappedCellStyle,
     getEmptyCellStyle,
     rackCardStyle,
-    rackGridStyle,
+    rackOverviewGridStyle,
     rackHeaderStyle,
     rackScrollStyle,
     rackTitleStyle,
@@ -70,37 +68,82 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
 
     return (
         <article style={rackCardStyle}>
-            <div style={rackHeaderStyle}>
-                <div>
-                    <h3 style={rackTitleStyle}>{formatRackName(rackNumber)}</h3>
-                </div>
+            <div
+                style={{
+                    ...rackHeaderStyle,
+                    alignItems: "flex-start",
+                    paddingBottom: "1rem",
+                    borderBottom: "1px solid #dde1e9",
+                    marginBottom: "1rem",
+                }}
+            >
+                <h3
+                    style={{
+                        ...rackTitleStyle,
+                        color: "#0b1f55",
+                        fontSize: "0.98rem",
+                    }}
+                >
+                    {formatRackName(rackNumber)}
+                </h3>
             </div>
 
             <div style={rackScrollStyle}>
-                <div style={rackGridStyle(columns.length, layers.length)}>
-                    <div style={cornerCellStyle} />
-
-                    {columns.map((columnNumber) => (
-                        <div
-                            key={`rack-${rackNumber}-column-${columnNumber}`}
-                            style={columnLabelCellStyle}
-                        >
-                            {columnNumber}
-                        </div>
-                    ))}
-
+                <div
+                    style={{
+                        ...rackOverviewGridStyle(
+                            columns.length,
+                            layers.length,
+                            230,
+                            124
+                        ),
+                        gridTemplateRows:
+                            `repeat(${layers.length}, minmax(124px, auto))`,
+                    }}
+                > 
                     {layers.map((layerNumber) => (
                         <Fragment key={`rack-${rackNumber}-layer-${layerNumber}`}>
-                            <div style={rowLabelCellStyle}>Layer {layerNumber}</div>
+                            <div
+                                style={{
+                                    ...rowLabelCellStyle,
+                                    flexDirection: "column",
+                                    justifyContent: "center",
+                                    paddingLeft: 0,
+                                    border: 0,
+                                    background: "transparent",
+                                    boxShadow: "none",
+                                    color: "#0b1f55",
+                                    lineHeight: 1.15,
+                                    textTransform: "uppercase",
+                                }}
+                            >
+                                <span>Layer</span>
+                                <strong>{layerNumber}</strong>
+                            </div>
 
                             {columns.map((columnNumber) => {
                                 const box = findBox(layerNumber, columnNumber);
                                 const isRecentlyAssigned = recentlyAssignedBoxNo === box?.BoxNo;
                                 const isTarget = selectedTargetBox?.BoxNo === box?.BoxNo;
                                 const showCheckIcon = isTarget && !isRecentlyAssigned && !isExistingHolderLocation;
+                                const hasHolderContents = Boolean(
+                                    box && Number(box.BoxListCount) > 0
+                                );
 
                                 return (
                                     <button
+                                        className={[
+                                            "pwd-rack-box-cell",
+                                            hasHolderContents
+                                                ? "pwd-rack-box-cell--interactive"
+                                                : "",
+                                            isTarget ? "pwd-rack-box-cell--target" : "",
+                                            isRecentlyAssigned
+                                                ? "pwd-rack-box-cell--recently-assigned"
+                                                : "",
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ")}
                                         type="button"
                                         key={`rack-${rackNumber}-layer-${layerNumber}-box-${columnNumber}`}
                                         disabled={!box}
@@ -204,6 +247,7 @@ export default function RackPanel({ recentlyAssignedBoxNo, rackNumber, layerCoun
             {selectedBoxName && (
                 <BoxAssignmentsModal
                     boxName={selectedBoxName}
+                    rackNumber={rackNumber}
                     onClose={() => setSelectedBoxName(null)}
                     onBoxesChanged={onBoxesChanged}
                 />

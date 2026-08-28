@@ -1,89 +1,118 @@
-import type { CSSProperties } from "react";
 import type { BoxView } from "../../types/stacker";
 import { formatBoxName } from "../../utils/nameTransformers";
 
-const SEGMENT_CAP = 10;
-const BLUE_DARK = "#0052cc";
-const BLUE_LIGHT = "#cfe3ff";
-const GREEN_DARK = "#16833a";
-const GREEN_LIGHT = "#d8f3df";
+const HOLDER_MATRIX_CAP = 100;
+const PROPORTIONAL_SEGMENT_COUNT = 10; 
 
 interface SegmentedBoxProps {
     box: BoxView;
     maxItemPerBox: number;
 }
 
-export default function SegmentedBox({ box, maxItemPerBox }: SegmentedBoxProps) {
-    const configuredCapacity = Math.max(1, Number(maxItemPerBox) || 1);
-    const visibleCapacity = Math.min(configuredCapacity, SEGMENT_CAP);
-    const itemCount = Math.max(0, Number(box.BoxListCount) || 0);
-    const occupiedSegments = itemCount === 0
-        ? 0
-        : Math.min(
-            visibleCapacity,
-            Math.max(1, Math.round((itemCount / configuredCapacity) * visibleCapacity))
-        );
-    const isRelease = box.HasReleaseStatus;
-    const filledColor = isRelease ? GREEN_DARK : BLUE_DARK;
-    const availableColor = isRelease ? GREEN_LIGHT : BLUE_LIGHT;
+export default function SegmentedBox({
+    box,
+    maxItemPerBox,
+}: SegmentedBoxProps) {
+    const capacity = Math.max(1, Number(maxItemPerBox) || 1);
+    const usesHolderMatrix = capacity <= HOLDER_MATRIX_CAP;
+    const segmentCount = usesHolderMatrix
+        ? capacity
+        : PROPORTIONAL_SEGMENT_COUNT;
 
-    const trackStyle: CSSProperties = {
-        position: "absolute",
-        inset: "4px",
-        display: "grid",
-        gridTemplateColumns: `repeat(${visibleCapacity}, minmax(0, 1fr))`,
-        gap: "2px",
-        padding: "3px",
-        borderRadius: "6px",
-        background: availableColor,
-        boxSizing: "border-box",
-    };
+    const itemCount = Math.max(0, Number(box.BoxListCount) || 0);
+
+    const occupiedSegments = usesHolderMatrix
+        ? Math.min(itemCount, segmentCount)
+        : itemCount === 0
+            ? 0
+            : Math.min(
+                segmentCount,
+                Math.max(
+                    1,
+                    Math.round((itemCount / capacity) * segmentCount)
+                )
+            );
+
+    const toSegmentIndex = (position: number) =>
+        usesHolderMatrix
+            ? position
+            : Math.min(
+                segmentCount - 1,
+                Math.floor((position * segmentCount) / capacity)
+            );
+
+    const releaseSegmentIndexes = new Set(
+        (box.ReleaseHolderPositions ?? [])
+            .filter(
+                (position) =>
+                    Number.isInteger(position) &&
+                    position >= 0 &&
+                    position < itemCount
+            )
+            .map(toSegmentIndex)
+    );
+
+    const heldSegmentIndexes = new Set(
+        (box.HeldHolderPositions ?? [])
+            .filter(
+                (position) =>
+                    Number.isInteger(position) &&
+                    position >= 0 &&
+                    position < itemCount
+            )
+            .map(toSegmentIndex)
+    );
 
     return (
-        <span
-            aria-hidden="true"
-            style={{
-                position: "absolute",
-                inset: 0,
-                overflow: "hidden",
-                pointerEvents: "none",
-            }}
-        >
-            <span style={trackStyle}>
-                {Array.from({ length: visibleCapacity }, (_, index) => (
-                    <span
-                        key={index}
-                        style={{
-                            minWidth: 0,
-                            borderRadius: "3px",
-                            background: index < occupiedSegments ? filledColor : availableColor,
-                            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.32)",
-                        }}
-                    />
-                ))}
+        <span className="pwd-box-cell-content" aria-hidden="true">
+            <span className="pwd-box-cell-identity">
+                <strong className="pwd-box-cell-name-pill">
+                    {formatBoxName(box.BoxNo, box.RackNum)}
+                </strong>
+
+                <small className="pwd-box-cell-count">
+                    {itemCount}/{capacity}
+                </small>
             </span>
 
             <span
+                className="pwd-box-capacity-track"
                 style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "1px",
-                    padding: "0.2rem",
-                    color: occupiedSegments > 0 ? "#ffffff" : "#172b4d",
-                    fontSize: "0.66rem",
-                    fontWeight: 800,
-                    lineHeight: 1.05,
-                    textAlign: "center",
-                    textShadow: occupiedSegments > 0 ? "0 1px 2px rgba(0,0,0,0.55)" : undefined,
-                    overflowWrap: "anywhere",
+                    gridTemplateColumns:
+                        `repeat(${segmentCount}, minmax(0, 1fr))`,
                 }}
             >
-                <span>{formatBoxName(box.BoxNo, box.RackNum)}</span>
-                <small>{itemCount}/{configuredCapacity}</small>
+                {Array.from({ length: segmentCount }, (_, index) => {
+                    const isHeld = heldSegmentIndexes.has(index);
+                    const isRelease =
+                        releaseSegmentIndexes.has(index);
+                    const isFilled = index < occupiedSegments;
+
+                    const stateClass = isHeld
+                        ? "is-held"
+                        : isRelease
+                            ? "is-release"
+                            : isFilled
+                                ? "is-filled"
+                                : "is-available";
+
+                    return (
+                        <span
+                            key={index}
+                            className={
+                                `pwd-box-capacity-segment ${stateClass}`
+                            }
+                        />
+                    );
+                })}
+            </span>
+
+            <span className="pwd-box-cell-action">
+                <span>View holders</span>
+                <i
+                    className="fa-solid fa-chevron-right"
+                    aria-hidden="true"
+                />
             </span>
         </span>
     );

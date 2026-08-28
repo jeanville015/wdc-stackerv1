@@ -5,16 +5,21 @@ import {
 } from "../../api/stackerApi";
 import { useAuth } from "../../context/useAuth";
 import type { BoxAssignment, BoxView } from "../../types/stacker";
-import { formatBoxName } from "../../utils/nameTransformers";
+import {
+    formatBoxName,
+    formatRackName,
+} from "../../utils/nameTransformers";
 
 interface Props {
     boxName: string;
+    rackNumber: number;
     onClose: () => void;
     onBoxesChanged: (boxes: BoxView[]) => void;
 }
 
 export default function BoxAssignmentsModal({
     boxName,
+    rackNumber,
     onClose,
     onBoxesChanged,
 }: Props) {
@@ -95,18 +100,38 @@ export default function BoxAssignmentsModal({
             className="modal d-block"
             role="dialog"
             aria-modal="true"
+            aria-labelledby="pwd-box-assignments-modal-title"
             style={{ background: "rgba(9, 30, 66, 0.55)" }}
             onMouseDown={onClose}
         >
             <div
-                className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"
+                className="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable pwd-box-assignments-dialog"
                 onMouseDown={(event) => event.stopPropagation()}
             >
-                <div className="modal-content">
-                    <div className="modal-header align-items-center">
-                        <h5 className="modal-title" style={{ flex: 1, textAlign: "center" }}>
-                            Black Box: {formatBoxName(boxName, 0)}
-                        </h5>
+                <div className="modal-content pwd-box-assignments-modal">
+                    <div className="modal-header pwd-box-assignments-modal-header">
+                        <div className="pwd-box-assignments-heading">
+                            <span className="pwd-box-assignments-eyebrow">
+                                Black Box
+                            </span>
+
+                            <h5
+                                id="pwd-box-assignments-modal-title"
+                                className="modal-title"
+                            >
+                                {formatBoxName(boxName, rackNumber)}
+                            </h5>
+
+                            <div className="pwd-box-assignments-subtitle">
+                                <i
+                                    className="fa-solid fa-chevron-right"
+                                    aria-hidden="true"
+                                />
+
+                                <span>{formatRackName(rackNumber)}</span>
+                            </div>
+                        </div>
+
                         <button
                             type="button"
                             className="btn-close"
@@ -125,9 +150,9 @@ export default function BoxAssignmentsModal({
                                 <span className="spinner-border" />
                             </div>
                         ) : (
-                            <div className="table-responsive">
-                                <table className="table table-bordered table-hover align-middle">
-                                    <thead className="table-light">
+                            <div className="table-responsive pwd-box-assignments-table-wrap">
+                                <table className="table table-bordered align-middle text-center pwd-box-assignments-table">
+                                    <thead>
                                         <tr>
                                             <th>Holder</th>
                                             <th>Job</th>
@@ -141,43 +166,87 @@ export default function BoxAssignmentsModal({
                                     </thead>
                                     <tbody>
                                         {rows.map((row) => {
-                                            const canDisassociate =
-                                                row.Status.trim().toUpperCase() ===
-                                                "RELEASE";
+                                            const normalizedStatus = (
+                                                row.Status ?? ""
+                                            ).trim().toUpperCase();
+
+                                            const isRelease = normalizedStatus === "RELEASE";
+                                            const isHold = normalizedStatus === "HOLD";
+                                            const canDisassociate = isRelease;
+
+                                            const rowClassName = [
+                                                isRelease
+                                                    ? "pwd-box-assignment-row--release"
+                                                    : "",
+                                                isHold
+                                                    ? "pwd-box-assignment-row--hold"
+                                                    : "",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" ");
 
                                             return (
-                                                <tr key={row.Holder}>
-                                                    <td>{row.Holder}</td>
-                                                    <td>{row.Job ?? ""}</td>
-                                                    <td>{row.Qty ?? ""}</td>
-                                                    <td>{row.ProductName}</td>
-                                                    <td>{row.Factory}</td>
-                                                    <td>{row.Lec}</td>
-                                                    <td>{row.Status}</td>
+                                                <tr
+                                                    key={row.Holder}
+                                                    className={rowClassName || undefined}
+                                                >
+                                                    <td className="pwd-box-assignment-holder">
+                                                        {row.Holder}
+                                                    </td>
+
+                                                    <td>{row.Job?.trim() || "—"}</td>
+
+                                                    <td>{row.Qty ?? "—"}</td>
+
+                                                    <td>{row.ProductName || "—"}</td>
+
+                                                    <td>{row.Factory || "—"}</td>
+
+                                                    <td>{row.Lec || "—"}</td>
+
+                                                    <td>
+                                                        {isRelease ? (
+                                                            <span className="pwd-box-assignment-status pwd-box-assignment-status--release">
+                                                                RELEASE
+                                                            </span>
+                                                        ) : isHold ? (
+                                                            <span className="pwd-box-assignment-status pwd-box-assignment-status--hold">
+                                                                HOLD
+                                                            </span>
+                                                        ) : (
+                                                            <span className="pwd-box-assignment-empty-value">
+                                                                {row.Status?.trim() || "—"}
+                                                            </span>
+                                                        )}
+                                                    </td>
+
                                                     <td>
                                                         <button
-                                                            className={`btn btn-sm ${
+                                                            type="button"
+                                                            className={[
+                                                                "btn",
+                                                                "btn-sm",
+                                                                "pwd-box-assignment-disassociate",
                                                                 canDisassociate
-                                                                    ? "btn-danger"
-                                                                    : "btn-secondary"
-                                                            }`}
+                                                                    ? "btn-outline-danger"
+                                                                    : "pwd-box-assignment-disassociate--disabled",
+                                                            ].join(" ")}
                                                             disabled={!canDisassociate}
-                                                            style={
-                                                                !canDisassociate
-                                                                    ? {
-                                                                          backgroundColor: "#adb5bd",
-                                                                          borderColor: "#adb5bd",
-                                                                          color: "#f1f1f1",
-                                                                          opacity: 1,
-                                                                          cursor: "not-allowed",
-                                                                      }
-                                                                    : undefined
+                                                            aria-label={
+                                                                canDisassociate
+                                                                    ? `Disassociate holder ${row.Holder}`
+                                                                    : `Holder ${row.Holder} cannot be disassociated`
                                                             }
                                                             onClick={() =>
                                                                 setConfirmRow(row)
                                                             }
                                                         >
-                                                            Disassociate
+                                                            <i
+                                                                className="fa-solid fa-link-slash"
+                                                                aria-hidden="true"
+                                                            />
+
+                                                            <span>Disassociate</span>
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -251,7 +320,7 @@ export default function BoxAssignmentsModal({
                             )}
                     </div>
 
-                    <div className="modal-footer">
+                    <div className="modal-footer pwd-box-assignments-modal-footer">
                         <button className="btn btn-secondary" onClick={onClose}>
                             Close
                         </button>
